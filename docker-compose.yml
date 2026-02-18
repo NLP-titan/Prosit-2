@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PROJECTS_DIR=/projects
+      - TEMPLATES_DIR=/templates
+    volumes:
+      - ./templates:/templates
+      - ./projects:/projects
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /app
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+    depends_on:
+      - backend
