@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+:root {
+  /* Light mode defaults */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f5;    /* zinc-100 */
+  --bg-tertiary: #e4e4e7;     /* zinc-200 */
+  --bg-hover: #e4e4e7;
+  --text-primary: #18181b;     /* zinc-900 */
+  --text-secondary: #52525b;   /* zinc-600 */
+  --text-muted: #a1a1aa;       /* zinc-400 */
+  --border-color: #d4d4d8;     /* zinc-300 */
+  --accent: #3b82f6;           /* blue-500 */
+}
+
+.dark {
+  --bg-primary: #18181b;       /* zinc-900 */
+  --bg-secondary: #27272a;     /* zinc-800 */
+  --bg-tertiary: #3f3f46;      /* zinc-700 */
+  --bg-hover: #3f3f46;
+  --text-primary: #f4f4f5;     /* zinc-100 */
+  --text-secondary: #a1a1aa;   /* zinc-400 */
+  --text-muted: #71717a;       /* zinc-500 */
+  --border-color: #3f3f46;     /* zinc-700 */
+  --accent: #60a5fa;           /* blue-400 */
+}
+
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-hover: var(--bg-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border-color);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Allotment sash (resize handle) styling */
+.sash-container .sash {
+  background: transparent !important;
+  transition: background 150ms;
+}
+.sash-container .sash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  background: var(--border-color);
+  transition: background 150ms;
+}
+.sash-container .sash:hover::before,
+.sash-container .sash.active::before {
+  background: var(--accent);
+}
