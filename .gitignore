@@ -1,28 +1,8 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
-venv/
+projects/
+.env
 .venv/
-
-# Backend
-backend/.env
-backend/data/
-backend/projects/
-
-# Frontend
-frontend/node_modules/
+__pycache__/
+*.pyc
+node_modules/
+.next/
 frontend/.next/
-frontend/out/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db

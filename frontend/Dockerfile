@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -7,8 +7,19 @@ RUN npm ci
 
 COPY . .
 
+ENV NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_WS_URL=ws://localhost:8000
+
 RUN npm run build
 
-EXPOSE 3000
+FROM node:20-alpine AS runner
 
-CMD ["npm", "start"]
+WORKDIR /app
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+ENV PORT=3000
+
+CMD ["node", "server.js"]

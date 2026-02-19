@@ -1,110 +1,155 @@
+from __future__ import annotations
+
 import asyncio
 import json
+import traceback
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.agent.core import AgentLoop
-from app.database import get_session
-from app.models import ChatMessage, Project
+from app.agent.core import AgentSession
+from app.services import project as project_svc
+from app.services import git as git_svc
+from app.db import get_db
 
-router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+router = APIRouter(tags=["chat"])
 
-# In-memory stream queues (single-process, Phase 1)
-active_streams: dict[str, asyncio.Queue] = {}
+# Active agent sessions keyed by project_id
+_sessions: dict[str, AgentSession] = {}
 
 
-class ChatSendRequest(BaseModel):
-    message: str
+async def _get_or_create_session(project_id: str) -> AgentSession | None:
+    if project_id in _sessions:
+        return _sessions[project_id]
+    project = await project_svc.get_project(project_id)
+    if project is None:
+        return None
+    session = AgentSession(project)
+    # Restore conversation history from DB
+    await session.context.load_from_db(project_id)
+    _sessions[project_id] = session
+    return session
 
 
-@router.post("/{project_id}/send")
-async def send_message(
-    project_id: str,
-    body: ChatSendRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    project = await session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    queue = asyncio.Queue()
-    active_streams[project_id] = queue
-
-    # Run agent loop in background
-    asyncio.create_task(_run_agent(project_id, body.message, queue))
-
-    return {"status": "accepted"}
+async def _send(ws: WebSocket, msg_type: str, data: dict | None = None):
+    await ws.send_text(json.dumps({"type": msg_type, **(data or {})}))
 
 
-@router.get("/{project_id}/stream")
-async def stream_response(project_id: str):
-    queue = active_streams.get(project_id)
-    if not queue:
-        return StreamingResponse(
-            iter([_sse("error", {"message": "No active stream"})]),
-            media_type="text/event-stream",
-        )
+@router.websocket("/ws/chat/{project_id}")
+async def chat_ws(ws: WebSocket, project_id: str):
+    await ws.accept()
 
-    async def event_generator():
+    session = await _get_or_create_session(project_id)
+    if session is None:
+        await _send(ws, "error", {"message": "Project not found"})
+        await ws.close()
+        return
+
+    agent_task: asyncio.Task | None = None
+
+    async def run_agent(user_message: str):
         try:
-            while True:
-                event = await asyncio.wait_for(queue.get(), timeout=300)
-                yield event
-                if '"message_end"' in event or '"error"' in event:
-                    break
-        except asyncio.TimeoutError:
-            yield _sse("error", {"message": "Stream timeout"})
-        finally:
-            active_streams.pop(project_id, None)
+            last_state = session.project.state
+            async for event in session.handle_user_message(user_message):
+                await _send(ws, event.type, event.data)
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+                # After tool calls that modify files, send file tree and git updates
+                if event.type == "tool_call_result":
+                    tool = event.data.get("tool")
+                    if tool in ("write_file", "edit_file", "scaffold_project", "git_commit"):
+                        await _send_sidebar_updates(ws, session)
 
+                    # Send project state update if state changed
+                    if session.project.state != last_state:
+                        last_state = session.project.state
+                        await _send(ws, "state_update", {
+                            "state": session.project.state.value,
+                            "swagger_url": session.project.swagger_url,
+                            "api_url": session.project.api_url,
+                        })
 
-@router.get("/{project_id}/history")
-async def get_history(
-    project_id: str, session: AsyncSession = Depends(get_session)
-):
-    result = await session.execute(
-        select(ChatMessage)
-        .where(ChatMessage.project_id == project_id)
-        .order_by(ChatMessage.created_at)
-    )
-    messages = result.scalars().all()
-    return [
-        {
-            "id": m.id,
-            "role": m.role,
-            "content": m.content,
-            "tool_calls": json.loads(m.tool_calls) if m.tool_calls else None,
-            "tool_call_id": m.tool_call_id,
-            "tool_name": m.tool_name,
-            "created_at": m.created_at.isoformat(),
-        }
-        for m in messages
-    ]
+                # Handle ask_user event — pause and wait for user response
+                if event.type == "ask_user":
+                    return  # The agent loop is paused, waiting for answer
 
+        except asyncio.CancelledError:
+            await _send(ws, "stopped", {"message": "Agent stopped by user"})
+        except Exception:
+            await _send(ws, "error", {"message": traceback.format_exc()[-1000:]})
 
-async def _run_agent(project_id: str, message: str, queue: asyncio.Queue):
-    agent = AgentLoop(project_id)
     try:
-        async for event in agent.run(message):
-            await queue.put(event)
-    except Exception as e:
-        await queue.put(_sse("error", {"message": str(e)}))
-        await queue.put(_sse("message_end", {}))
+        while True:
+            raw = await ws.receive_text()
+            payload = json.loads(raw)
+
+            # Handle stop request
+            if payload.get("type") == "stop":
+                session.cancel()
+                if agent_task and not agent_task.done():
+                    agent_task.cancel()
+                await _send(ws, "stopped", {"message": "Agent stopped by user"})
+                continue
+
+            user_message = payload.get("message", "")
+            if not user_message:
+                continue
+
+            # Cancel any existing run before starting a new one
+            if agent_task and not agent_task.done():
+                session.cancel()
+                agent_task.cancel()
+
+            agent_task = asyncio.create_task(run_agent(user_message))
+
+    except WebSocketDisconnect:
+        if agent_task and not agent_task.done():
+            session.cancel()
+            agent_task.cancel()
 
 
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+async def _send_sidebar_updates(ws: WebSocket, session: AgentSession):
+    """Send file tree and git log updates to the frontend."""
+    project_dir = session.project.directory
+    if not project_dir.exists():
+        return
+
+    # File tree
+    files = []
+    for f in sorted(project_dir.rglob("*")):
+        if f.is_file() and ".git" not in f.parts:
+            files.append(str(f.relative_to(project_dir)))
+    await _send(ws, "file_tree_update", {"files": files})
+
+    # Git log
+    if (project_dir / ".git").exists():
+        log = await git_svc.git_log(project_dir)
+        await _send(ws, "git_update", {"commits": log})
+
+
+@router.get("/projects/{project_id}/chat/history")
+async def get_chat_history(project_id: str):
+    """Return chat messages formatted for frontend display."""
+    project = await project_svc.get_project(project_id)
+    if project is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Project not found")
+
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT role, content, tool_calls, tool_call_id FROM chat_messages WHERE project_id = ? ORDER BY id",
+            (project_id,),
+        )
+        rows = await cursor.fetchall()
+    finally:
+        await db.close()
+
+    messages = []
+    for row in rows:
+        role = row["role"]
+        content = row["content"]
+        if role == "user":
+            messages.append({"role": "user", "content": content})
+        elif role == "assistant":
+            messages.append({"role": "assistant", "content": content or ""})
+        # tool roles are internal, skip for frontend display
+    return messages

@@ -1,240 +1,190 @@
+from __future__ import annotations
+
+import asyncio
 import json
-import os
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
-from app.agent.history import HistoryManager
-from app.agent.llm_client import llm_client
-from app.agent.prompts import build_system_prompt
-from app.agent.tool_registry import ToolRegistry
-from app.agent.tools.command_tools import register_command_tools
-from app.agent.tools.file_tools import register_file_tools
-from app.agent.tools.git_tools import register_git_tools
-from app.agent.tools.search_tools import register_search_tools
-from app.agent.tools.user_tools import AskUserInterrupt, register_user_tools
-from app.config import settings
+from app.agent.context import ConversationContext
+from app.agent.llm import chat_completion_stream
+from app.agent.prompts import TOOL_SCHEMAS
+from app.agent.tools import execute_tool
+from app.models.project import Project
 
 
-def _build_tool_registry() -> ToolRegistry:
-    registry = ToolRegistry()
-    register_file_tools(registry)
-    register_search_tools(registry)
-    register_command_tools(registry)
-    register_git_tools(registry)
-    register_user_tools(registry)
-    return registry
+@dataclass
+class AgentEvent:
+    """Events yielded by the agent loop to the WebSocket layer."""
+    type: str  # agent_message_start, agent_message_delta, agent_message_end,
+               # tool_call_start, tool_call_result, build_complete,
+               # waiting_for_user, ask_user, error, stopped
+    data: dict = field(default_factory=dict)
 
 
-def _list_project_files(project_id: str) -> list[str]:
-    """List all files in the project for context."""
-    project_dir = Path(settings.projects_base_dir) / project_id
-    if not project_dir.exists():
-        return []
+class AgentSession:
+    """Manages one conversation session for a project."""
 
-    files = []
-    for root, dirs, filenames in os.walk(project_dir):
-        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".git", "node_modules")]
-        for f in filenames:
-            rel = os.path.relpath(os.path.join(root, f), project_dir)
-            files.append(rel)
-    return sorted(files)
+    def __init__(self, project: Project) -> None:
+        self.project = project
+        self.context = ConversationContext()
+        self._max_tool_rounds = 30  # safety limit per user message
+        self._cancelled = False
+        self._pending_ask_user_tc_id: str | None = None
 
+    def cancel(self) -> None:
+        """Cancel the current agent run."""
+        self._cancelled = True
 
-class AgentLoop:
-    """
-    The core agent loop. Takes a user message, runs the LLM with tools,
-    executes tool calls, and yields SSE events throughout.
-    """
+    async def handle_user_message(self, message: str) -> AsyncGenerator[AgentEvent, None]:
+        """Process a user message and yield events (streamed text + tool calls)."""
+        self._cancelled = False
 
-    def __init__(self, project_id: str):
-        self.project_id = project_id
-        self.tools = _build_tool_registry()
-        self.history = HistoryManager()
-        self.max_iterations = settings.max_agent_iterations
+        # If there's a pending ask_user, inject the response as a tool result
+        if self._pending_ask_user_tc_id is not None:
+            tc_id = self._pending_ask_user_tc_id
+            self._pending_ask_user_tc_id = None
+            await self.context.add_tool_result(tc_id, message)
+            # Continue the agent loop after injecting the answer
+            async for event in self._continue_agent_loop():
+                yield event
+            return
 
-    async def run(self, user_message: str) -> AsyncGenerator[str, None]:
-        """
-        Main entry. Yields SSE-formatted event strings.
+        await self.context.add_user_message(message)
 
-        Handles the ask_user resumption flow: if there's a pending ask_user,
-        the user_message is treated as the answer to that question.
-        """
-        # Check for pending ask_user
-        pending = await self.history.get_pending_ask_user(self.project_id)
-        if pending:
-            # This message is the answer to a pending ask_user question
-            await self.history.append(
-                self.project_id,
-                {
-                    "role": "tool",
-                    "tool_call_id": pending["tool_call_id"],
-                    "content": user_message,
-                    "name": "ask_user",
-                },
-            )
-        else:
-            # Normal user message
-            await self.history.append(
-                self.project_id, {"role": "user", "content": user_message}
-            )
+        async for event in self._continue_agent_loop():
+            yield event
 
-        yield self._sse("message_start", {})
+    async def _continue_agent_loop(self) -> AsyncGenerator[AgentEvent, None]:
+        """Run the agent loop (LLM calls + tool execution)."""
+        for _ in range(self._max_tool_rounds):
+            if self._cancelled:
+                yield AgentEvent(type="stopped", data={"message": "Agent stopped by user"})
+                return
 
-        iteration = 0
-        while iteration < self.max_iterations:
-            iteration += 1
+            has_tool_calls = False
+            async for event in self._run_llm_turn():
+                if self._cancelled:
+                    yield AgentEvent(type="stopped", data={"message": "Agent stopped by user"})
+                    return
+                yield event
+                if event.type == "tool_call_start":
+                    has_tool_calls = True
+                if event.type == "build_complete":
+                    return
+                if event.type == "ask_user":
+                    return  # Pause — waiting for user answer
 
-            # Build messages for LLM
-            existing_files = _list_project_files(self.project_id)
-            system_prompt = build_system_prompt(self.project_id, existing_files)
-            messages = await self.history.get_messages(self.project_id)
+            # If no tool calls, the agent is done or waiting for user
+            if not has_tool_calls:
+                yield AgentEvent(type="waiting_for_user")
+                return
 
-            # Call LLM with streaming
-            tool_calls_accumulated = []
-            text_accumulated = ""
+        # Safety: if we exhaust tool rounds, unfreeze the UI
+        yield AgentEvent(type="waiting_for_user")
 
-            try:
-                async for chunk in llm_client.stream_chat(
-                    messages=[{"role": "system", "content": system_prompt}] + messages,
-                    tools=self.tools.get_openai_schema(),
-                ):
-                    if not chunk.choices:
-                        continue
+    async def _run_llm_turn(self) -> AsyncGenerator[AgentEvent, None]:
+        """Run one LLM call, stream text, accumulate tool calls, execute them."""
+        text_parts: list[str] = []
+        tool_calls_acc: dict[int, dict] = {}
+        started_text = False
 
-                    delta = chunk.choices[0].delta
+        try:
+            async for chunk in chat_completion_stream(
+                self.context.get_messages(), tools=TOOL_SCHEMAS
+            ):
+                if self._cancelled:
+                    return
 
-                    # Stream text content
-                    if delta.content:
-                        text_accumulated += delta.content
-                        yield self._sse("text_delta", {"content": delta.content})
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if delta is None:
+                    continue
 
-                    # Accumulate tool calls
-                    if delta.tool_calls:
-                        for tc_delta in delta.tool_calls:
-                            self._accumulate_tool_call(tool_calls_accumulated, tc_delta)
+                # Stream text content
+                if delta.content:
+                    if not started_text:
+                        yield AgentEvent(type="agent_message_start")
+                        started_text = True
+                    yield AgentEvent(type="agent_message_delta", data={"token": delta.content})
+                    text_parts.append(delta.content)
 
-            except Exception as e:
-                yield self._sse("error", {"message": f"LLM error: {str(e)}"})
-                break
+                # Accumulate tool calls
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {
+                                "id": tc.id or "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                        if tc.id:
+                            tool_calls_acc[idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_calls_acc[idx]["function"]["name"] += tc.function.name
+                            if tc.function.arguments:
+                                tool_calls_acc[idx]["function"]["arguments"] += tc.function.arguments
 
-            # Process the response
-            if tool_calls_accumulated:
-                # Build and save assistant message
-                tc_dicts = [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": tc["arguments"],
-                        },
-                    }
-                    for tc in tool_calls_accumulated
-                ]
+        except Exception as e:
+            yield AgentEvent(type="error", data={"message": f"LLM error: {e}"})
+            return
 
-                assistant_msg = {
-                    "role": "assistant",
-                    "content": text_accumulated or None,
-                    "tool_calls": tc_dicts,
-                }
-                await self.history.append(self.project_id, assistant_msg)
+        if started_text:
+            yield AgentEvent(type="agent_message_end")
 
-                # Execute each tool call
-                for tc in tool_calls_accumulated:
-                    yield self._sse(
-                        "tool_start",
-                        {
-                            "id": tc["id"],
-                            "name": tc["name"],
-                            "arguments": tc["arguments"],
-                        },
-                    )
+        full_text = "".join(text_parts) if text_parts else None
 
-                    try:
-                        args = json.loads(tc["arguments"])
-                    except json.JSONDecodeError:
-                        args = {}
+        # If there are tool calls, execute them
+        if tool_calls_acc:
+            tool_calls_list = [tool_calls_acc[i] for i in sorted(tool_calls_acc.keys())]
+            await self.context.add_assistant_tool_calls(full_text, tool_calls_list)
 
-                    # Special handling for ask_user
-                    if tc["name"] == "ask_user":
-                        question = args.get("question", "")
-                        options = args.get("options", [])
-                        # Save the tool call but don't execute — interrupt
-                        yield self._sse(
-                            "ask_user",
-                            {
-                                "question": question,
-                                "options": options,
-                                "tool_call_id": tc["id"],
-                            },
-                        )
-                        yield self._sse("message_end", {})
-                        return
+            for tc in tool_calls_list:
+                if self._cancelled:
+                    return
 
-                    # Execute the tool
-                    result = await self.tools.execute(
-                        name=tc["name"],
-                        arguments=args,
-                        project_id=self.project_id,
-                    )
+                func_name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
+                except json.JSONDecodeError:
+                    args = {}
 
-                    # Truncate result for SSE display
-                    display_result = result
-                    if len(display_result) > 3000:
-                        display_result = (
-                            display_result[:3000]
-                            + f"\n... (truncated, {len(result)} chars)"
-                        )
-
-                    yield self._sse(
-                        "tool_result",
-                        {
-                            "id": tc["id"],
-                            "name": tc["name"],
-                            "result": display_result,
-                            "is_error": result.startswith("Error"),
-                        },
-                    )
-
-                    # Save tool result to history
-                    await self.history.append(
-                        self.project_id,
-                        {
-                            "role": "tool",
+                # Handle ask_user specially — pause and yield event
+                if func_name == "ask_user":
+                    self._pending_ask_user_tc_id = tc["id"]
+                    yield AgentEvent(
+                        type="ask_user",
+                        data={
+                            "question": args.get("question", ""),
+                            "options": args.get("options", []),
                             "tool_call_id": tc["id"],
-                            "content": result,
-                            "name": tc["name"],
                         },
                     )
+                    return  # Pause the loop
 
-                # Loop back to call LLM again with tool results
-                continue
+                yield AgentEvent(
+                    type="tool_call_start",
+                    data={"tool": func_name, "arguments": args},
+                )
 
-            else:
-                # LLM responded with text only — done
-                if text_accumulated:
-                    await self.history.append(
-                        self.project_id,
-                        {"role": "assistant", "content": text_accumulated},
+                result = await execute_tool(self.project, func_name, args)
+
+                await self.context.add_tool_result(tc["id"], result)
+
+                yield AgentEvent(
+                    type="tool_call_result",
+                    data={"tool": func_name, "result": result[:2000]},
+                )
+
+                # Check if build_complete was called
+                if func_name == "build_complete":
+                    yield AgentEvent(
+                        type="build_complete",
+                        data={
+                            "swagger_url": self.project.swagger_url,
+                            "api_url": self.project.api_url,
+                        },
                     )
-                break
-
-        yield self._sse("message_end", {})
-
-    def _sse(self, event: str, data: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-    def _accumulate_tool_call(self, accumulated: list[dict], delta) -> None:
-        """Merge streamed tool_call deltas into complete tool call objects."""
-        idx = delta.index
-        while len(accumulated) <= idx:
-            accumulated.append({"id": "", "name": "", "arguments": ""})
-
-        tc = accumulated[idx]
-        if delta.id:
-            tc["id"] = delta.id
-        if delta.function:
-            if delta.function.name:
-                tc["name"] = delta.function.name
-            if delta.function.arguments:
-                tc["arguments"] += delta.function.arguments
+                    return
+        elif full_text:
+            await self.context.add_assistant_message(full_text)
