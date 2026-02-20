@@ -52,10 +52,11 @@ MOCK_RELATIONSHIPS = [
 ]
 
 MOCK_TASKS = [
-    Task(id="t1", type="scaffold", agent="scaffold", dependencies=[]),
+    Task(id="t1", type="scaffold", description="Scaffold project", agent="scaffold", dependencies=[]),
     Task(
         id="t2",
         type="create_models",
+        description="Create Author model",
         agent="database",
         dependencies=["t1"],
         context={
@@ -66,6 +67,7 @@ MOCK_TASKS = [
     Task(
         id="t3",
         type="create_models",
+        description="Create Book model",
         agent="database",
         dependencies=["t1"],
         context={
@@ -76,6 +78,7 @@ MOCK_TASKS = [
     Task(
         id="t4",
         type="create_routes",
+        description="Create Author CRUD routes",
         agent="api",
         dependencies=["t2", "t3"],
         context={
@@ -86,6 +89,7 @@ MOCK_TASKS = [
     Task(
         id="t5",
         type="create_routes",
+        description="Create Book CRUD routes",
         agent="api",
         dependencies=["t2", "t3"],
         context={

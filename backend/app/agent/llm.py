@@ -50,15 +50,20 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 async def chat_completion_stream(
-    messages: list[dict], tools: list[dict] | None = None
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    model: str | None = None,
 ):
     """Yield streaming chunks from OpenRouter with retry on transient failures.
 
     Only the initial stream creation is retried. Once chunks start flowing,
     stream errors propagate to the caller (the agent's LLM loop handles them).
+
+    Args:
+        model: If provided, use this model. Otherwise use settings.OPENROUTER_MODEL.
     """
     kwargs: dict = {
-        "model": settings.OPENROUTER_MODEL,
+        "model": model or settings.OPENROUTER_MODEL,
         "messages": messages,
         "stream": True,
         "temperature": 0.2,
@@ -95,3 +100,20 @@ async def chat_completion_stream(
     # Stream chunks (no retry here — partial streams handled by caller)
     async for chunk in stream:
         yield chunk
+
+
+async def chat_completion(
+    messages: list[dict],
+    model: str | None = None,
+) -> str:
+    """Non-streaming completion for classification tasks.
+
+    Returns the text content of the response.
+    """
+    client = get_client()
+    response = await client.chat.completions.create(
+        model=model or settings.OPENROUTER_MODEL,
+        messages=messages,
+        temperature=0.1,
+    )
+    return response.choices[0].message.content or ""

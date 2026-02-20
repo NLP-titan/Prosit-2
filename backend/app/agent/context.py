@@ -89,3 +89,49 @@ class ConversationContext:
                 self.messages.append(
                     {"role": "tool", "tool_call_id": tool_call_id, "content": content}
                 )
+
+
+class ScopedContext:
+    """Context for a single agent's conversation.
+
+    Unlike ConversationContext which always uses the global SYSTEM_PROMPT,
+    this takes a custom system prompt and can be seeded with relevant context.
+    Ephemeral — not persisted to SQLite.
+    """
+
+    def __init__(
+        self, system_prompt: str, seed_messages: list[dict] | None = None
+    ) -> None:
+        self.messages: list[dict] = [
+            {"role": "system", "content": system_prompt}
+        ]
+        if seed_messages:
+            self.messages.extend(seed_messages)
+
+    def add_user_message(self, content: str) -> None:
+        self.messages.append({"role": "user", "content": content})
+
+    def add_assistant_message(self, content: str) -> None:
+        self.messages.append({"role": "assistant", "content": content})
+
+    def add_assistant_tool_calls(
+        self, content: str | None, tool_calls: list[dict]
+    ) -> None:
+        msg: dict = {"role": "assistant", "tool_calls": tool_calls}
+        if content:
+            msg["content"] = content
+        self.messages.append(msg)
+
+    def add_tool_result(self, tool_call_id: str, result: str) -> None:
+        self.messages.append(
+            {"role": "tool", "tool_call_id": tool_call_id, "content": result}
+        )
+
+    def get_messages(self) -> list[dict]:
+        return self.messages
+
+    def reset(self, keep_system: bool = True) -> None:
+        if keep_system and self.messages and self.messages[0]["role"] == "system":
+            self.messages = [self.messages[0]]
+        else:
+            self.messages = []
