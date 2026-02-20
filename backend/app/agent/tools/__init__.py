@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+import json
+import asyncio
+from pathlib import Path
+
+from app.models.project import Project, ProjectState
+from app.services import git as git_svc
+from app.services import docker as docker_svc
+from app.services import project as project_svc
+from app.generator.scaffold import scaffold_project
+from app.agent.agents.constants import (
+    SHELL_COMMAND_TIMEOUT_SECONDS,
+    MAX_FILE_WRITE_BYTES,
+    MAX_FILE_READ_CHARS,
+    READ_FILE_TRUNCATION_MSG,
+    DOCKER_LOG_TAIL_CHARS,
+)
+
+
+def _validate_path(project_dir: Path, relative_path: str) -> Path:
+    """Resolve and validate that a path stays within the project directory."""
+    resolved = (project_dir / relative_path).resolve()
+    project_resolved = project_dir.resolve()
+    if not (
+        resolved == project_resolved
+        or str(resolved).startswith(str(project_resolved) + "/")
+    ):
+        raise PermissionError(
+            f"Access denied: path '{relative_path}' escapes project directory"
+        )
+    return resolved
+
+
+async def _run_shell(command: str, cwd: Path) -> dict:
+    proc = await asyncio.create_subprocess_shell(
+        command,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=SHELL_COMMAND_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        return {"stdout": "", "stderr": "Command timed out", "returncode": 1}
+    return {
+        "stdout": stdout.decode(errors="replace"),
+        "stderr": stderr.decode(errors="replace"),
+        "returncode": proc.returncode,
+    }
+
+
+async def execute_tool(
+    project: Project,
+    tool_name: str,
+    arguments: dict,
+) -> str:
+    """Execute a tool and return the result as a string."""
+    project_dir = project.directory
+
+    try:
+        if tool_name == "read_file":
+            file_path = _validate_path(project_dir, arguments["path"])
+            if not file_path.exists():
+                return f"Error: File not found: {arguments['path']}"
+            content = file_path.read_text()
+            if len(content) > MAX_FILE_READ_CHARS:
+                return (
+                    content[:MAX_FILE_READ_CHARS]
+                    + READ_FILE_TRUNCATION_MSG.format(len(content))
+                )
+            return content
+
+        elif tool_name == "write_file":
+            file_path = _validate_path(project_dir, arguments["path"])
+            file_content = arguments["content"]
+            if len(file_content.encode("utf-8")) > MAX_FILE_WRITE_BYTES:
+                return f"Error: File content exceeds {MAX_FILE_WRITE_BYTES // 1_000_000}MB limit"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(file_content)
+            return f"Written: {arguments['path']}"
+
+        elif tool_name == "edit_file":
+            file_path = _validate_path(project_dir, arguments["path"])
+            if not file_path.exists():
+                return f"Error: File not found: {arguments['path']}"
+            content = file_path.read_text()
+            old_text = arguments["old_text"]
+            if old_text not in content:
+                return f"Error: old_text not found in {arguments['path']}"
+            new_content = content.replace(old_text, arguments["new_text"], 1)
+            file_path.write_text(new_content)
+            return f"Edited: {arguments['path']}"
+
+        elif tool_name == "list_directory":
+            dir_path = _validate_path(project_dir, arguments.get("path", "."))
+            if not dir_path.exists():
+                return f"Error: Directory not found: {arguments.get('path', '.')}"
+            entries = sorted(dir_path.iterdir())
+            return "\n".join(
+                f"{'[dir] ' if e.is_dir() else ''}{e.name}" for e in entries
+            )
+
+        elif tool_name == "run_command":
+            result = await _run_shell(arguments["command"], project_dir)
+            parts = []
+            if result["stdout"]:
+                parts.append(f"stdout:\n{result['stdout']}")
+            if result["stderr"]:
+                parts.append(f"stderr:\n{result['stderr']}")
+            parts.append(f"exit code: {result['returncode']}")
+            return "\n".join(parts)
+
+        elif tool_name == "git_commit":
+            commit_hash = await git_svc.git_commit(project_dir, arguments["message"])
+            return f"Committed: {commit_hash}"
+
+        elif tool_name == "git_log":
+            log = await git_svc.git_log(project_dir)
+            if not log:
+                return "No commits yet."
+            return "\n".join(f"{e['hash']} {e['message']}" for e in log)
+
+        elif tool_name == "docker_compose_up":
+            project.state = ProjectState.BUILDING
+            try:
+                await project_svc.update_project(project)
+            except Exception:
+                pass
+            ok, output = await docker_svc.compose_up(project_dir)
+            if ok:
+                project.state = ProjectState.RUNNING
+                project.swagger_url = f"http://localhost:{project.app_port}/docs"
+                project.api_url = f"http://localhost:{project.app_port}"
+                try:
+                    await project_svc.update_project(project)
+                except Exception:
+                    pass
+                return (
+                    f"SUCCESS: Containers started and running.\n"
+                    f"API URL: http://localhost:{project.app_port}\n"
+                    f"Swagger UI: http://localhost:{project.app_port}/docs\n\n"
+                    f"IMPORTANT: Now call build_complete with swagger_url="
+                    f"\"http://localhost:{project.app_port}/docs\" and api_url="
+                    f"\"http://localhost:{project.app_port}\". "
+                    f"Do NOT test with curl. Call build_complete NOW."
+                )
+            else:
+                project.state = ProjectState.ERROR
+                try:
+                    await project_svc.update_project(project)
+                except Exception:
+                    pass
+                return f"Docker compose up failed:\n{output[-2000:]}"
+
+        elif tool_name == "docker_compose_down":
+            ok, output = await docker_svc.compose_down(project_dir)
+            project.state = ProjectState.STOPPED
+            try:
+                await project_svc.update_project(project)
+            except Exception:
+                pass
+            return "Containers stopped." if ok else f"Error: {output[-1000:]}"
+
+        elif tool_name == "docker_status":
+            status = await docker_svc.compose_status(project_dir)
+            return json.dumps(status, indent=2)
+
+        elif tool_name == "docker_logs":
+            service = arguments.get("service", "")
+            logs = await docker_svc.compose_logs(project_dir, service=service)
+            return logs[-DOCKER_LOG_TAIL_CHARS:] if logs else "No logs available."
+
+        elif tool_name == "scaffold_project":
+            scaffold_project(project)
+            await git_svc.git_init(project_dir)
+            await git_svc.git_commit(project_dir, "Initial scaffold from template")
+            project.state = ProjectState.SCAFFOLDED
+            try:
+                await project_svc.update_project(project)
+            except Exception:
+                pass  # DB may not be available in tests
+            return "Project scaffolded and initial commit created."
+
+        elif tool_name == "build_complete":
+            project.swagger_url = arguments["swagger_url"]
+            project.api_url = arguments["api_url"]
+            project.state = ProjectState.RUNNING
+            try:
+                await project_svc.update_project(project)
+            except Exception:
+                pass
+            return "Build marked as complete."
+
+        elif tool_name == "ask_user":
+            return "__ASK_USER__"
+
+        else:
+            return f"Unknown tool: {tool_name}"
+
+    except Exception as e:
+        return f"Error executing {tool_name}: {e}"
