@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     tool_call_id TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shared_state (
+    project_id TEXT PRIMARY KEY,
+    current_phase TEXT NOT NULL DEFAULT 'research',
+    spec_json TEXT,
+    manifest_json TEXT,
+    files_created TEXT DEFAULT '[]',
+    errors TEXT DEFAULT '[]',
+    updated_at TEXT
+);
 """
 
 

@@ -225,4 +225,55 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_spec_completeness",
+            "description": "Check if the current project specification has all required information. Returns a list of missing fields, or empty list if complete.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spec_json": {
+                        "type": "string",
+                        "description": "The current ProjectSpec as a JSON string",
+                    }
+                },
+                "required": ["spec_json"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finalize_spec",
+            "description": "Submit the complete project specification. Call this when the user has confirmed the requirements summary. This signals the end of the research phase.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spec_json": {
+                        "type": "string",
+                        "description": "The complete ProjectSpec as a JSON string",
+                    }
+                },
+                "required": ["spec_json"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_plan",
+            "description": "Submit the task manifest for the project. This signals the end of the planning phase.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "manifest_json": {
+                        "type": "string",
+                        "description": "The TaskManifest as a JSON string (array of task objects)",
+                    }
+                },
+                "required": ["manifest_json"],
+            },
+        },
+    },
 ]

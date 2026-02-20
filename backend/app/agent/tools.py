@@ -148,6 +148,26 @@ async def execute_tool(
         elif tool_name == "ask_user":
             return "__ASK_USER__"
 
+        elif tool_name == "check_spec_completeness":
+            from app.agent.state import ProjectSpec
+
+            spec_json = arguments.get("spec_json", "{}")
+            try:
+                spec_data = json.loads(spec_json)
+                spec = ProjectSpec.from_dict(spec_data)
+                missing = spec.missing_fields()
+                return json.dumps({"complete": len(missing) == 0, "missing": missing})
+            except Exception as e:
+                return f"Error parsing spec: {e}"
+
+        elif tool_name == "finalize_spec":
+            spec_json = arguments.get("spec_json", "{}")
+            return f"__FINALIZE_SPEC__{spec_json}"
+
+        elif tool_name == "submit_plan":
+            manifest_json = arguments.get("manifest_json", "[]")
+            return f"__SUBMIT_PLAN__{manifest_json}"
+
         else:
             return f"Unknown tool: {tool_name}"
 

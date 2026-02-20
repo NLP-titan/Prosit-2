@@ -6,7 +6,7 @@ import traceback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.agent.core import AgentSession
+from app.agent.orchestrator import OrchestratorSession
 from app.services import project as project_svc
 from app.services import git as git_svc
 from app.db import get_db
@@ -14,18 +14,17 @@ from app.db import get_db
 router = APIRouter(tags=["chat"])
 
 # Active agent sessions keyed by project_id
-_sessions: dict[str, AgentSession] = {}
+_sessions: dict[str, OrchestratorSession] = {}
 
 
-async def _get_or_create_session(project_id: str) -> AgentSession | None:
+async def _get_or_create_session(project_id: str) -> OrchestratorSession | None:
     if project_id in _sessions:
         return _sessions[project_id]
     project = await project_svc.get_project(project_id)
     if project is None:
         return None
-    session = AgentSession(project)
-    # Restore conversation history from DB
-    await session.context.load_from_db(project_id)
+    session = OrchestratorSession(project)
+    await session.restore_state()
     _sessions[project_id] = session
     return session
 
@@ -106,7 +105,7 @@ async def chat_ws(ws: WebSocket, project_id: str):
             agent_task.cancel()
 
 
-async def _send_sidebar_updates(ws: WebSocket, session: AgentSession):
+async def _send_sidebar_updates(ws: WebSocket, session: OrchestratorSession):
     """Send file tree and git log updates to the frontend."""
     project_dir = session.project.directory
     if not project_dir.exists():

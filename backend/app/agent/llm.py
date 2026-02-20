@@ -17,10 +17,18 @@ def get_client() -> AsyncOpenAI:
     return _client
 
 
-async def chat_completion_stream(messages: list[dict], tools: list[dict] | None = None):
-    """Yield streaming chunks from OpenRouter."""
+async def chat_completion_stream(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    model: str | None = None,
+):
+    """Yield streaming chunks from OpenRouter.
+
+    Args:
+        model: If provided, use this model. Otherwise use settings.OPENROUTER_MODEL.
+    """
     kwargs: dict = {
-        "model": settings.OPENROUTER_MODEL,
+        "model": model or settings.OPENROUTER_MODEL,
         "messages": messages,
         "stream": True,
         "temperature": 0.2,
@@ -33,3 +41,20 @@ async def chat_completion_stream(messages: list[dict], tools: list[dict] | None 
     stream = await client.chat.completions.create(**kwargs)
     async for chunk in stream:
         yield chunk
+
+
+async def chat_completion(
+    messages: list[dict],
+    model: str | None = None,
+) -> str:
+    """Non-streaming completion for classification tasks.
+
+    Returns the text content of the response.
+    """
+    client = get_client()
+    response = await client.chat.completions.create(
+        model=model or settings.OPENROUTER_MODEL,
+        messages=messages,
+        temperature=0.1,
+    )
+    return response.choices[0].message.content or ""
