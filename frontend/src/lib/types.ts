@@ -51,15 +51,40 @@ export interface ToolGroup {
   isActive: boolean;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+  status: "running" | "done";
+  result?: string;
+  is_error?: boolean;
+}
+
+export interface AskUserOption {
+  label: string;
+  description?: string;
+  multi_select?: boolean;
+}
+
+export interface AskUserData {
+  question: string;
+  toolCallId?: string;
+  options?: AskUserOption[];
+  answered?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool_group" | "build_summary" | "ask_user";
   content: string;
   toolGroup?: ToolGroup;
+  toolCalls?: ToolCall[];
   isStreaming?: boolean;
   swaggerUrl?: string;
   apiUrl?: string;
-  // ask_user
+  timestamp?: Date;
+  askUser?: AskUserData;
+  // legacy flat fields
   options?: string[];
   answered?: boolean;
 }
@@ -69,11 +94,31 @@ export interface GitCommit {
   message: string;
 }
 
+export interface FileNode {
+  name: string;
+  path?: string;
+  type: "file" | "directory";
+  children?: FileNode[];
+}
+
+export interface DockerServiceStatus {
+  name: string;
+  state: string;
+  port?: number;
+}
+
+export interface DockerStatus {
+  status: string;
+  services?: DockerServiceStatus[];
+  message?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   description: string;
   state: string;
+  status: string;
   app_port: number;
   db_port: number;
   created_at: string;

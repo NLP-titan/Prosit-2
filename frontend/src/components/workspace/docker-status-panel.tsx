@@ -15,7 +15,7 @@ import {
   stopDocker,
   getDockerStatus,
 } from "@/lib/api-client";
-import type { DockerStatus } from "@/lib/types";
+import type { DockerStatus, DockerServiceStatus } from "@/lib/types";
 
 interface DockerStatusPanelProps {
   projectId: string;
@@ -85,11 +85,11 @@ export function DockerStatusPanel({
     }
   };
 
-  const isRunning = status?.services?.some((s) => s.state === "running");
+  const isRunning = status?.services?.some((s: DockerServiceStatus) => s.state === "running");
   // Find port from api service, or any service with a published port
   const apiPort =
-    status?.services?.find((s) => s.name.includes("api"))?.port ||
-    status?.services?.find((s) => s.port)?.port;
+    status?.services?.find((s: DockerServiceStatus) => s.name.includes("api"))?.port ||
+    status?.services?.find((s: DockerServiceStatus) => s.port)?.port;
 
   // Debug: log status on every update
   useEffect(() => {
@@ -108,7 +108,7 @@ export function DockerStatusPanel({
         </span>
       )}
 
-      {!error && (status?.services?.map((svc) => (
+      {!error && (status?.services?.map((svc: DockerServiceStatus) => (
         <div key={svc.name} className="flex items-center gap-1">
           <CircleDot
             className={`h-3 w-3 ${

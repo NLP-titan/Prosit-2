@@ -26,14 +26,14 @@ export function useChat(projectId: string) {
           mapped.push({
             id: msg.id,
             role: "user",
-            content: msg.content,
+            content: msg.content || "",
             timestamp: new Date(msg.created_at),
           });
         } else if (msg.role === "assistant") {
           mapped.push({
             id: msg.id,
             role: "assistant",
-            content: msg.content,
+            content: msg.content || "",
             toolCalls: msg.tool_calls
               ? msg.tool_calls.map((tc: any) => ({
                   id: tc.id,
