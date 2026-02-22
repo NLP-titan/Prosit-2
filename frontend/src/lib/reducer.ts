@@ -18,7 +18,8 @@ export type AppAction =
   | { type: "STATE_UPDATE"; state: string; swaggerUrl: string; apiUrl: string }
   | { type: "SELECT_FILE"; path: string | null }
   | { type: "ASK_USER"; question: string; options: string[] }
-  | { type: "MARK_ANSWERED"; messageId: string };
+  | { type: "MARK_ANSWERED"; messageId: string }
+  | { type: "SET_MESSAGES"; messages: ChatMessage[] };
 
 let msgCounter = 0;
 function nextId() {
@@ -262,6 +263,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       );
       return { ...state, messages: msgs };
     }
+
+    case "SET_MESSAGES":
+      return { ...state, messages: action.messages };
 
     default:
       return state;

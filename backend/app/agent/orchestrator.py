@@ -73,7 +73,9 @@ class OrchestratorSession:
                 agent_class = getattr(module, class_name)
                 self._agents[name] = agent_class()
             except (ImportError, AttributeError) as e:
-                logger.warning(f"Agent '{name}' not available: {e}")
+                logger.debug("Agent '%s' not available: %s", name, e)
+        if self._agents:
+            logger.info("[Orchestrator] Loaded agents: %s", list(self._agents.keys()))
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -118,6 +120,10 @@ class OrchestratorSession:
 
         if row:
             self.state = SharedState.from_dict(dict(row))
+            logger.info(
+                "[Orchestrator] Restored state: phase=%s",
+                self.state.current_phase.value,
+            )
 
     # ── Main entry point ────────────────────────────────────────
 
@@ -149,6 +155,10 @@ class OrchestratorSession:
             return
 
         # 3. Route to current phase
+        logger.info(
+            "[Orchestrator] handle_user_message → phase=%s",
+            self.state.current_phase.value,
+        )
         async for event in self._run_phase(message):
             yield event
 
@@ -186,11 +196,12 @@ class OrchestratorSession:
         self, user_message: str | None
     ) -> AsyncGenerator[AgentEvent, None]:
         if "clarification" not in self._agents:
-            # Fallback to prototype
+            logger.warning("[Orchestrator] RESEARCH but no clarification agent, using fallback")
             async for event in self._fallback_to_prototype(user_message or ""):
                 yield event
             return
 
+        logger.info("[Orchestrator] Running Clarification agent (sending to OpenRouter)...")
         agent = self._agents["clarification"]
         self._active_agent = agent
 
@@ -208,6 +219,10 @@ class OrchestratorSession:
 
         if result.spec:
             self.state.spec = result.spec
+            logger.info(
+                "[Orchestrator] Clarification done: spec captured (%d entities). Next: planning (no Planning agent yet).",
+                len(result.spec.entities),
+            )
             # Transition to planning
             yield AgentEvent(type="agent_message_start")
             yield AgentEvent(
@@ -231,7 +246,18 @@ class OrchestratorSession:
 
     async def _run_planning(self) -> AsyncGenerator[AgentEvent, None]:
         if "planning" not in self._agents:
-            async for event in self._fallback_to_prototype(""):
+            # No Planning agent: treat as RESEARCH so Clarification handles the user message
+            last_user = ""
+            for t in reversed(self.state.user_conversation):
+                if t.get("role") == "user" and t.get("content"):
+                    last_user = t["content"]
+                    break
+            logger.info(
+                "[Orchestrator] PLANNING phase but no Planning agent – switching to RESEARCH so Clarification runs (message: %d chars).",
+                len(last_user),
+            )
+            self.state.current_phase = Phase.RESEARCH
+            async for event in self._run_research(last_user):
                 yield event
             return
 

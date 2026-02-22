@@ -1,6 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+# So [Agent] and [Orchestrator] steps show in the console when OpenRouter is used
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db

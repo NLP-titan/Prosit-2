@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
-from app.agent.state import SharedState, Task, AgentResult
+from app.agent.state import AgentResult, ProjectSpec, SharedState, Task, TaskManifest
 from app.models.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -130,17 +134,18 @@ class BaseAgent(ABC):
             has_tool_calls = False
 
             try:
-                async for chunk in chat_completion_stream(
+                stream = chat_completion_stream(
                     messages, tools=tools, model=self.model
-                ):
-                    if self._cancelled:
-                        return
+                )
+                stream_iter = stream.__aiter__()
+                chunk_timeout = 60.0   # max seconds between chunks
+                first_chunk_timeout = 45.0  # max seconds for first chunk
 
+                def process_chunk(chunk):
+                    nonlocal started_text
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta is None:
-                        continue
-
-                    # Stream text content
+                        return
                     if delta.content:
                         if not started_text:
                             yield AgentEvent(type="agent_message_start")
@@ -150,8 +155,6 @@ class BaseAgent(ABC):
                             data={"token": delta.content},
                         )
                         text_parts.append(delta.content)
-
-                    # Accumulate tool calls
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
                             idx = tc.index
@@ -173,7 +176,68 @@ class BaseAgent(ABC):
                                         "arguments"
                                     ] += tc.function.arguments
 
+                # First chunk with shorter timeout
+                try:
+                    chunk = await asyncio.wait_for(
+                        stream_iter.__anext__(), timeout=first_chunk_timeout
+                    )
+                except asyncio.TimeoutError:
+                    yield AgentEvent(
+                        type="error",
+                        data={
+                            "message": "The AI did not respond in 45 seconds. Check your OpenRouter API key and connection, then try again."
+                        },
+                    )
+                    self._result = AgentResult(
+                        status="error",
+                        error="LLM first response timeout",
+                    )
+                    return
+                except StopAsyncIteration:
+                    pass
+                else:
+                    logger.info(
+                        "[Agent] OpenRouter responded: first chunk received (model=%s)",
+                        self.model or "default",
+                    )
+                    for ev in process_chunk(chunk):
+                        yield ev
+
+                # Rest of stream: 60s max between chunks so we don't hang
+                while True:
+                    if self._cancelled:
+                        return
+                    try:
+                        chunk = await asyncio.wait_for(
+                            stream_iter.__anext__(), timeout=chunk_timeout
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        yield AgentEvent(
+                            type="error",
+                            data={
+                                "message": "The AI stopped responding (60s). You can try again or use a different model."
+                            },
+                        )
+                        self._result = AgentResult(
+                            status="error",
+                            error="LLM stream timeout",
+                        )
+                        return
+                    for ev in process_chunk(chunk):
+                        yield ev
+
+                content_len = sum(len(p) for p in text_parts)
+                num_tools = len(tool_calls_acc)
+                logger.info(
+                    "[Agent] OpenRouter stream finished: %d content chars, %d tool call(s)",
+                    content_len,
+                    num_tools,
+                )
+
             except Exception as e:
+                logger.exception("[Agent] LLM error")
                 yield AgentEvent(
                     type="error", data={"message": f"LLM error: {e}"}
                 )
@@ -214,6 +278,8 @@ class BaseAgent(ABC):
                     except json.JSONDecodeError:
                         args = {}
 
+                    logger.info("[Agent] Executing tool: %s", func_name)
+
                     # Handle ask_user — pause and yield event
                     if func_name == "ask_user":
                         self._pending_ask_user_tc_id = tc["id"]
@@ -233,6 +299,14 @@ class BaseAgent(ABC):
                     )
 
                     result = await execute_tool(project, func_name, args)
+
+                    logger.info(
+                        "[Agent] Tool %s returned (%d chars): %.80s%s",
+                        func_name,
+                        len(result),
+                        result[:80],
+                        "..." if len(result) > 80 else "",
+                    )
 
                     # Add tool result to messages
                     messages.append(
@@ -307,10 +381,8 @@ class BaseAgent(ABC):
         return self._pending_ask_user_tc_id is not None
 
 
-def _parse_spec_from_sentinel(result: str) -> "ProjectSpec | None":
+def _parse_spec_from_sentinel(result: str) -> ProjectSpec | None:
     """Parse ProjectSpec from __FINALIZE_SPEC__ sentinel."""
-    from app.agent.state import ProjectSpec
-
     try:
         json_str = result[len("__FINALIZE_SPEC__") :]
         data = json.loads(json_str)
@@ -319,10 +391,8 @@ def _parse_spec_from_sentinel(result: str) -> "ProjectSpec | None":
         return None
 
 
-def _parse_manifest_from_sentinel(result: str) -> "TaskManifest | None":
+def _parse_manifest_from_sentinel(result: str) -> TaskManifest | None:
     """Parse TaskManifest from __SUBMIT_PLAN__ sentinel."""
-    from app.agent.state import TaskManifest
-
     try:
         json_str = result[len("__SUBMIT_PLAN__") :]
         data = json.loads(json_str)

@@ -1,3 +1,5 @@
+"""Legacy single-agent system prompt and all tool schemas (used by core and base)."""
+
 SYSTEM_PROMPT = """\
 You are BackendForge, an AI agent that builds production-ready FastAPI + PostgreSQL backends from natural language descriptions.
 
