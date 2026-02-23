@@ -117,6 +117,10 @@ class BaseAgent(ABC):
         from app.agent.llm import chat_completion_stream
         from app.agent.tools import execute_tool
 
+        # Reset per-run state (agents are reused across tasks)
+        self._result = AgentResult(status="success")
+        self._cancelled = False
+        self._pending_ask_user_tc_id = None
         self._current_messages = messages
         tools = self.get_tool_schemas()
 
