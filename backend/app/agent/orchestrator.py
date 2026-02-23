@@ -205,12 +205,23 @@ class OrchestratorSession:
         agent = self._agents["clarification"]
         self._active_agent = agent
 
+        # Track streamed text so we can save assistant messages to user_conversation
+        text_parts: list[str] = []
+
         async for event in agent.run(
             state=self.state,
             project=self.project,
             user_message=user_message,
         ):
             yield event
+            # Accumulate assistant text for conversation history
+            if event.type == "agent_message_delta":
+                text_parts.append(event.data.get("token", ""))
+            elif event.type == "agent_message_end" and text_parts:
+                self.state.user_conversation.append(
+                    {"role": "assistant", "content": "".join(text_parts)}
+                )
+                text_parts.clear()
             if event.type == "ask_user":
                 return  # Paused, waiting for user
 
@@ -679,11 +690,21 @@ class OrchestratorSession:
 
         agent.resume_after_ask_user(agent._current_messages, message)
 
+        # Track streamed text for conversation history
+        text_parts: list[str] = []
+
         # Continue the react loop
         async for event in agent._run_react_loop(
             agent._current_messages, self.project
         ):
             yield event
+            if event.type == "agent_message_delta":
+                text_parts.append(event.data.get("token", ""))
+            elif event.type == "agent_message_end" and text_parts:
+                self.state.user_conversation.append(
+                    {"role": "assistant", "content": "".join(text_parts)}
+                )
+                text_parts.clear()
             if event.type == "ask_user":
                 return
             if event.type == "build_complete":
