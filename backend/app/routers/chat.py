@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import traceback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.agent.orchestrator import OrchestratorSession
+
+logger = logging.getLogger(__name__)
 from app.services import project as project_svc
 from app.services import git as git_svc
 from app.db import get_db
@@ -91,6 +94,12 @@ async def chat_ws(ws: WebSocket, project_id: str):
             user_message = payload.get("message", "")
             if not user_message:
                 continue
+
+            logger.info(
+                "[Chat] WebSocket received message (%d chars), phase=%s",
+                len(user_message),
+                session.state.current_phase.value,
+            )
 
             # Cancel any existing run before starting a new one
             if agent_task and not agent_task.done():

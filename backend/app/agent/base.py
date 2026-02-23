@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
-from app.agent.state import SharedState, Task, AgentResult
+from app.agent.state import AgentResult, ProjectSpec, SharedState, Task, TaskManifest
 from app.models.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -135,7 +139,6 @@ class BaseAgent(ABC):
                 ):
                     if self._cancelled:
                         return
-
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta is None:
                         continue
@@ -172,8 +175,8 @@ class BaseAgent(ABC):
                                     tool_calls_acc[idx]["function"][
                                         "arguments"
                                     ] += tc.function.arguments
-
             except Exception as e:
+                logger.exception("[Agent] LLM error")
                 yield AgentEvent(
                     type="error", data={"message": f"LLM error: {e}"}
                 )
@@ -214,6 +217,8 @@ class BaseAgent(ABC):
                     except json.JSONDecodeError:
                         args = {}
 
+                    logger.info("[Agent] Executing tool: %s", func_name)
+
                     # Handle ask_user — pause and yield event
                     if func_name == "ask_user":
                         self._pending_ask_user_tc_id = tc["id"]
@@ -233,6 +238,14 @@ class BaseAgent(ABC):
                     )
 
                     result = await execute_tool(project, func_name, args)
+
+                    logger.info(
+                        "[Agent] Tool %s returned (%d chars): %.80s%s",
+                        func_name,
+                        len(result),
+                        result[:80],
+                        "..." if len(result) > 80 else "",
+                    )
 
                     # Add tool result to messages
                     messages.append(
@@ -307,10 +320,8 @@ class BaseAgent(ABC):
         return self._pending_ask_user_tc_id is not None
 
 
-def _parse_spec_from_sentinel(result: str) -> "ProjectSpec | None":
+def _parse_spec_from_sentinel(result: str) -> ProjectSpec | None:
     """Parse ProjectSpec from __FINALIZE_SPEC__ sentinel."""
-    from app.agent.state import ProjectSpec
-
     try:
         json_str = result[len("__FINALIZE_SPEC__") :]
         data = json.loads(json_str)
@@ -319,10 +330,8 @@ def _parse_spec_from_sentinel(result: str) -> "ProjectSpec | None":
         return None
 
 
-def _parse_manifest_from_sentinel(result: str) -> "TaskManifest | None":
+def _parse_manifest_from_sentinel(result: str) -> TaskManifest | None:
     """Parse TaskManifest from __SUBMIT_PLAN__ sentinel."""
-    from app.agent.state import TaskManifest
-
     try:
         json_str = result[len("__SUBMIT_PLAN__") :]
         data = json.loads(json_str)
