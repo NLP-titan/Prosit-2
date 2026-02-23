@@ -1,6 +1,7 @@
 projects/
 .env
 .venv/
+venv/
 __pycache__/
 *.pyc
 node_modules/
