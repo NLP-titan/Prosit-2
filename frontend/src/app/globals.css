@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Tailwind v4 auto-detection skips dirs with brackets (Next.js dynamic routes) */
+@source "./projects/*/page.tsx";
 
 :root {
   /* Light mode defaults */
