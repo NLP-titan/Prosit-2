@@ -239,16 +239,25 @@ def test_manifest_append_tasks():
 def test_template_registry_lookup():
     from app.generator.scaffold import (
         TEMPLATE_REGISTRY,
-        ADDON_REGISTRY,
         get_template_dir,
-        get_available_templates,
-        get_compatible_addons,
     )
 
     assert "fastapi-postgres" in TEMPLATE_REGISTRY
+    assert "fastapi-mongodb" in TEMPLATE_REGISTRY
+    assert "fastapi-mysql" in TEMPLATE_REGISTRY
+
     fp_template = TEMPLATE_REGISTRY["fastapi-postgres"]
     assert fp_template.name == "fastapi-postgres"
     assert fp_template.path.name == "fastapi-postgres"
+
+    mongo_template = TEMPLATE_REGISTRY["fastapi-mongodb"]
+    assert mongo_template.path.name == "fastapi-mongodb"
+    assert "auth" in mongo_template.supported_addons
+    assert "relations" not in mongo_template.supported_addons
+
+    mysql_template = TEMPLATE_REGISTRY["fastapi-mysql"]
+    assert mysql_template.path.name == "fastapi-mysql"
+    assert "relations" in mysql_template.supported_addons
 
     template_dir = get_template_dir("fastapi-postgres")
     assert template_dir == fp_template.path
@@ -277,10 +286,22 @@ def test_addon_registry():
     auth = ADDON_REGISTRY["auth"]
     assert auth.priority == 1
     assert "fastapi-postgres" in auth.compatible_bases
+    assert "fastapi-mongodb" in auth.compatible_bases
+    assert "fastapi-mysql" in auth.compatible_bases
 
-    compatible = get_compatible_addons("fastapi-postgres")
-    addon_names = {a.name for a in compatible}
-    assert addon_names == {"auth", "relations", "redis"}
+    relations = ADDON_REGISTRY["relations"]
+    assert "fastapi-postgres" in relations.compatible_bases
+    assert "fastapi-mysql" in relations.compatible_bases
+    assert "fastapi-mongodb" not in relations.compatible_bases
+
+    compatible_pg = get_compatible_addons("fastapi-postgres")
+    assert {a.name for a in compatible_pg} == {"auth", "relations", "redis"}
+
+    compatible_mongo = get_compatible_addons("fastapi-mongodb")
+    assert {a.name for a in compatible_mongo} == {"auth", "redis"}
+
+    compatible_mysql = get_compatible_addons("fastapi-mysql")
+    assert {a.name for a in compatible_mysql} == {"auth", "relations", "redis"}
     print("  PASS: addon registry")
 
 
@@ -288,13 +309,37 @@ def test_get_available_templates():
     from app.generator.scaffold import get_available_templates
 
     templates = get_available_templates()
-    assert len(templates) >= 1
+    assert len(templates) >= 3
     names = {t.name for t in templates}
-    assert "fastapi-postgres" in names
+    assert names == {"fastapi-postgres", "fastapi-mongodb", "fastapi-mysql"}
     print("  PASS: get_available_templates")
 
 
-# ── 6. submit_plan sentinel parsing ─────────────────────────────
+# ── 6. Database-to-template mapping ──────────────────────────────
+
+
+def test_database_to_template_mapping():
+    from app.generator.scaffold import get_template_for_database
+
+    assert get_template_for_database("postgresql") == "fastapi-postgres"
+    assert get_template_for_database("mongodb") == "fastapi-mongodb"
+    assert get_template_for_database("mysql") == "fastapi-mysql"
+    print("  PASS: database-to-template mapping")
+
+
+def test_database_to_template_unknown_raises():
+    from app.generator.scaffold import get_template_for_database
+
+    try:
+        get_template_for_database("oracle")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "oracle" in str(e)
+        assert "postgresql" in str(e)
+    print("  PASS: unknown database raises ValueError")
+
+
+# ── 7. submit_plan sentinel parsing ─────────────────────────────
 
 
 def test_submit_plan_sentinel_parsing():
@@ -337,6 +382,8 @@ def main():
         ("Unknown template error", test_template_registry_unknown_raises),
         ("Addon registry", test_addon_registry),
         ("Available templates", test_get_available_templates),
+        ("DB-to-template mapping", test_database_to_template_mapping),
+        ("Unknown DB error", test_database_to_template_unknown_raises),
         ("submit_plan sentinel", test_submit_plan_sentinel_parsing),
         ("submit_plan invalid", test_submit_plan_sentinel_invalid),
     ]

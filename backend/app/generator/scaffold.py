@@ -49,9 +49,18 @@ TEMPLATE_REGISTRY: dict[str, TemplateInfo] = {
         description="FastAPI + PostgreSQL + async SQLAlchemy",
         supported_addons=["auth", "relations", "redis"],
     ),
-    # Future base templates (not yet created):
-    # "fastapi-mongodb": TemplateInfo(...)   — Priority 3
-    # "fastapi-mysql": TemplateInfo(...)     — Priority 4
+    "fastapi-mongodb": TemplateInfo(
+        name="fastapi-mongodb",
+        path=settings.TEMPLATES_DIR / "fastapi-mongodb",
+        description="FastAPI + MongoDB + Motor async driver + Beanie ODM",
+        supported_addons=["auth", "redis"],
+    ),
+    "fastapi-mysql": TemplateInfo(
+        name="fastapi-mysql",
+        path=settings.TEMPLATES_DIR / "fastapi-mysql",
+        description="FastAPI + MySQL + aiomysql + async SQLAlchemy",
+        supported_addons=["auth", "relations", "redis"],
+    ),
 }
 
 ADDON_REGISTRY: dict[str, AddonInfo] = {
@@ -59,23 +68,30 @@ ADDON_REGISTRY: dict[str, AddonInfo] = {
         name="auth",
         path=settings.TEMPLATES_DIR / "addons" / "auth",
         description="JWT auth, Users table, bcrypt, protected routes, token refresh",
-        compatible_bases=["fastapi-postgres"],
+        compatible_bases=["fastapi-postgres", "fastapi-mongodb", "fastapi-mysql"],
         priority=1,
     ),
     "relations": AddonInfo(
         name="relations",
         path=settings.TEMPLATES_DIR / "addons" / "relations",
         description="Many-to-many junction tables, nested serialization, cascade config",
-        compatible_bases=["fastapi-postgres"],
+        compatible_bases=["fastapi-postgres", "fastapi-mysql"],
         priority=2,
     ),
     "redis": AddonInfo(
         name="redis",
         path=settings.TEMPLATES_DIR / "addons" / "redis",
         description="Composable cache layer for any base template",
-        compatible_bases=["fastapi-postgres"],
+        compatible_bases=["fastapi-postgres", "fastapi-mongodb", "fastapi-mysql"],
         priority=5,
     ),
+}
+
+# Maps ProjectSpec.database values to template names
+DATABASE_TO_TEMPLATE: dict[str, str] = {
+    "postgresql": "fastapi-postgres",
+    "mongodb": "fastapi-mongodb",
+    "mysql": "fastapi-mysql",
 }
 
 # Backward-compat alias used by other modules
@@ -108,6 +124,17 @@ def get_compatible_addons(template_name: str) -> list[AddonInfo]:
         for addon in ADDON_REGISTRY.values()
         if template_name in addon.compatible_bases
     ]
+
+
+def get_template_for_database(database: str) -> str:
+    """Map a ProjectSpec.database value to the corresponding template name."""
+    template = DATABASE_TO_TEMPLATE.get(database)
+    if template is None:
+        available = ", ".join(DATABASE_TO_TEMPLATE.keys())
+        raise ValueError(
+            f"Unsupported database '{database}'. Available: {available}"
+        )
+    return template
 
 
 # ── Scaffold Function ────────────────────────────────────────────

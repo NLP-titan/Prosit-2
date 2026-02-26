@@ -162,10 +162,14 @@ async def execute_tool(
 
         elif tool_name == "finalize_spec":
             spec_json = arguments.get("spec_json", "{}")
+            if not isinstance(spec_json, str):
+                spec_json = json.dumps(spec_json)
             return f"__FINALIZE_SPEC__{spec_json}"
 
         elif tool_name == "submit_plan":
             manifest_json = arguments.get("manifest_json", "[]")
+            if not isinstance(manifest_json, str):
+                manifest_json = json.dumps(manifest_json)
             return f"__SUBMIT_PLAN__{manifest_json}"
 
         else:
