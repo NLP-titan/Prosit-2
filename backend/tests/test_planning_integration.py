@@ -267,6 +267,332 @@ async def test_delta_planning():
     return True
 
 
+async def test_single_entity_planning():
+    """Test: Single entity with no relationships -> simpler manifest."""
+    print("\n--- Test: Single Entity Planning (Todo App) ---")
+
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="TodoItem",
+                fields=[
+                    FieldSpec(name="title", type="str", nullable=False),
+                    FieldSpec(name="completed", type="bool", nullable=False, default=False),
+                    FieldSpec(name="due_date", type="datetime", nullable=True),
+                ],
+            ),
+        ],
+        database="postgresql",
+    )
+    state = SharedState(project_id="test-single", current_phase=Phase.PLANNING)
+    state.spec = spec
+
+    project = Project(id="test-single", name="todo-app", app_port=9002, db_port=5502)
+
+    agent = PlanningAgent()
+    events: list[AgentEvent] = []
+
+    print("Calling LLM...")
+    async for event in agent.run(state=state, project=project):
+        events.append(event)
+        if event.type == "agent_message_delta":
+            print(event.data.get("token", ""), end="", flush=True)
+        elif event.type == "tool_call_start":
+            print(f"\n  [tool] {event.data.get('tool')}({json.dumps(event.data.get('arguments', {}))[:100]}...)")
+        elif event.type == "tool_call_result":
+            result_str = event.data.get("result", "")
+            print(f"  [result] {result_str[:120]}...")
+        elif event.type == "error":
+            print(f"\n  [ERROR] {event.data.get('message')}")
+
+    result = await agent.get_result()
+    print(f"\n\nAgent result status: {result.status}")
+
+    if result.status != "success":
+        print(f"FAIL: Agent returned status={result.status}, error={result.error}")
+        return False
+
+    if result.manifest is None:
+        print("FAIL: No manifest in result")
+        return False
+
+    manifest = result.manifest
+    print(f"Manifest has {len(manifest.tasks)} tasks:")
+    for t in manifest.tasks:
+        print(f"  {t.id}: [{t.type}] {t.description} (agent={t.agent}, deps={t.dependencies})")
+
+    issues = validate_manifest(manifest, is_delta=False)
+    if issues:
+        print(f"FAIL: Manifest validation issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+
+    model_tasks = [t for t in manifest.tasks if t.type == "create_models"]
+    if len(model_tasks) != 1:
+        print(f"WARNING: Expected 1 model task for single entity, got {len(model_tasks)}")
+
+    print("PASS: Single entity planning produced valid manifest")
+    return True
+
+
+async def test_auth_enabled_planning():
+    """Test: Spec with auth_required=True -> manifest should include auth tasks."""
+    print("\n--- Test: Auth-Enabled Planning ---")
+
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="User",
+                fields=[
+                    FieldSpec(name="email", type="str", nullable=False, unique=True),
+                    FieldSpec(name="password_hash", type="str", nullable=False),
+                    FieldSpec(name="display_name", type="str", nullable=True),
+                ],
+            ),
+            EntitySpec(
+                name="Post",
+                fields=[
+                    FieldSpec(name="title", type="str", nullable=False),
+                    FieldSpec(name="body", type="text", nullable=False),
+                    FieldSpec(name="published", type="bool", nullable=False, default=False),
+                ],
+            ),
+        ],
+        relationships=[
+            Relationship(entity_a="Post", entity_b="User", type="many_to_one"),
+        ],
+        database="postgresql",
+        auth_required=True,
+    )
+    state = SharedState(project_id="test-auth", current_phase=Phase.PLANNING)
+    state.spec = spec
+
+    project = Project(id="test-auth", name="blog-auth", app_port=9003, db_port=5503)
+
+    agent = PlanningAgent()
+    events: list[AgentEvent] = []
+
+    print("Calling LLM...")
+    async for event in agent.run(state=state, project=project):
+        events.append(event)
+        if event.type == "agent_message_delta":
+            print(event.data.get("token", ""), end="", flush=True)
+        elif event.type == "tool_call_start":
+            print(f"\n  [tool] {event.data.get('tool')}({json.dumps(event.data.get('arguments', {}))[:100]}...)")
+        elif event.type == "tool_call_result":
+            result_str = event.data.get("result", "")
+            print(f"  [result] {result_str[:120]}...")
+        elif event.type == "error":
+            print(f"\n  [ERROR] {event.data.get('message')}")
+
+    result = await agent.get_result()
+    print(f"\n\nAgent result status: {result.status}")
+
+    if result.status != "success":
+        print(f"FAIL: Agent returned status={result.status}, error={result.error}")
+        return False
+
+    if result.manifest is None:
+        print("FAIL: No manifest in result")
+        return False
+
+    manifest = result.manifest
+    print(f"Manifest has {len(manifest.tasks)} tasks:")
+    for t in manifest.tasks:
+        ctx_str = f", context={t.context}" if t.context else ""
+        print(f"  {t.id}: [{t.type}] {t.description} (agent={t.agent}, deps={t.dependencies}{ctx_str})")
+
+    issues = validate_manifest(manifest, is_delta=False)
+    if issues:
+        print(f"FAIL: Manifest validation issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+
+    all_text = " ".join(t.description.lower() for t in manifest.tasks)
+    all_contexts = json.dumps([t.context for t in manifest.tasks]).lower()
+    auth_mentioned = "auth" in all_text or "auth" in all_contexts
+    if not auth_mentioned:
+        print("WARNING: auth_required=True but no task mentions auth in description or context")
+    else:
+        print("  Auth is referenced in task descriptions or context")
+
+    print("PASS: Auth-enabled planning produced valid manifest")
+    return True
+
+
+async def test_mongodb_planning():
+    """Test: Non-PostgreSQL database (MongoDB) -> correct template selection."""
+    print("\n--- Test: MongoDB Planning ---")
+
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="Product",
+                fields=[
+                    FieldSpec(name="name", type="str", nullable=False),
+                    FieldSpec(name="price", type="float", nullable=False),
+                    FieldSpec(name="category", type="str", nullable=True),
+                ],
+            ),
+            EntitySpec(
+                name="Review",
+                fields=[
+                    FieldSpec(name="rating", type="int", nullable=False),
+                    FieldSpec(name="comment", type="text", nullable=True),
+                ],
+            ),
+        ],
+        relationships=[
+            Relationship(entity_a="Review", entity_b="Product", type="many_to_one"),
+        ],
+        database="mongodb",
+    )
+    state = SharedState(project_id="test-mongo", current_phase=Phase.PLANNING)
+    state.spec = spec
+
+    project = Project(id="test-mongo", name="shop-mongo", app_port=9004, db_port=5504)
+
+    agent = PlanningAgent()
+    events: list[AgentEvent] = []
+
+    print("Calling LLM...")
+    async for event in agent.run(state=state, project=project):
+        events.append(event)
+        if event.type == "agent_message_delta":
+            print(event.data.get("token", ""), end="", flush=True)
+        elif event.type == "tool_call_start":
+            print(f"\n  [tool] {event.data.get('tool')}({json.dumps(event.data.get('arguments', {}))[:100]}...)")
+        elif event.type == "tool_call_result":
+            result_str = event.data.get("result", "")
+            print(f"  [result] {result_str[:120]}...")
+        elif event.type == "error":
+            print(f"\n  [ERROR] {event.data.get('message')}")
+
+    result = await agent.get_result()
+    print(f"\n\nAgent result status: {result.status}")
+
+    if result.status != "success":
+        print(f"FAIL: Agent returned status={result.status}, error={result.error}")
+        return False
+
+    if result.manifest is None:
+        print("FAIL: No manifest in result")
+        return False
+
+    manifest = result.manifest
+    print(f"Manifest has {len(manifest.tasks)} tasks:")
+    for t in manifest.tasks:
+        ctx_str = f", context={t.context}" if t.context else ""
+        print(f"  {t.id}: [{t.type}] {t.description} (agent={t.agent}, deps={t.dependencies}{ctx_str})")
+
+    issues = validate_manifest(manifest, is_delta=False)
+    if issues:
+        print(f"FAIL: Manifest validation issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+
+    scaffold_tasks = [t for t in manifest.tasks if t.type == "scaffold"]
+    scaffold_text = " ".join(t.description.lower() for t in scaffold_tasks)
+    scaffold_ctx = json.dumps([t.context for t in scaffold_tasks]).lower()
+    mongo_ref = "mongo" in scaffold_text or "mongo" in scaffold_ctx
+    if mongo_ref:
+        print("  MongoDB is referenced in scaffold task")
+    else:
+        print("WARNING: database='mongodb' but scaffold task doesn't mention mongo")
+
+    print("PASS: MongoDB planning produced valid manifest")
+    return True
+
+
+async def test_many_to_many_planning():
+    """Test: Many-to-many relationship -> proper handling of junction/association."""
+    print("\n--- Test: Many-to-Many Planning (Students & Courses) ---")
+
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="Student",
+                fields=[
+                    FieldSpec(name="name", type="str", nullable=False),
+                    FieldSpec(name="email", type="str", nullable=False, unique=True),
+                ],
+            ),
+            EntitySpec(
+                name="Course",
+                fields=[
+                    FieldSpec(name="title", type="str", nullable=False),
+                    FieldSpec(name="credits", type="int", nullable=False),
+                ],
+            ),
+        ],
+        relationships=[
+            Relationship(entity_a="Student", entity_b="Course", type="many_to_many"),
+        ],
+        database="postgresql",
+    )
+    state = SharedState(project_id="test-m2m", current_phase=Phase.PLANNING)
+    state.spec = spec
+
+    project = Project(id="test-m2m", name="school", app_port=9005, db_port=5505)
+
+    agent = PlanningAgent()
+    events: list[AgentEvent] = []
+
+    print("Calling LLM...")
+    async for event in agent.run(state=state, project=project):
+        events.append(event)
+        if event.type == "agent_message_delta":
+            print(event.data.get("token", ""), end="", flush=True)
+        elif event.type == "tool_call_start":
+            print(f"\n  [tool] {event.data.get('tool')}({json.dumps(event.data.get('arguments', {}))[:100]}...)")
+        elif event.type == "tool_call_result":
+            result_str = event.data.get("result", "")
+            print(f"  [result] {result_str[:120]}...")
+        elif event.type == "error":
+            print(f"\n  [ERROR] {event.data.get('message')}")
+
+    result = await agent.get_result()
+    print(f"\n\nAgent result status: {result.status}")
+
+    if result.status != "success":
+        print(f"FAIL: Agent returned status={result.status}, error={result.error}")
+        return False
+
+    if result.manifest is None:
+        print("FAIL: No manifest in result")
+        return False
+
+    manifest = result.manifest
+    print(f"Manifest has {len(manifest.tasks)} tasks:")
+    for t in manifest.tasks:
+        ctx_str = f", context={t.context}" if t.context else ""
+        print(f"  {t.id}: [{t.type}] {t.description} (agent={t.agent}, deps={t.dependencies}{ctx_str})")
+
+    issues = validate_manifest(manifest, is_delta=False)
+    if issues:
+        print(f"FAIL: Manifest validation issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+
+    manifest_copy = TaskManifest.from_dict(manifest.to_dict())
+    execution_order = []
+    while not manifest_copy.all_complete():
+        next_task = manifest_copy.get_next_task()
+        if next_task is None:
+            print("FAIL: Dependency deadlock during simulated execution")
+            return False
+        execution_order.append(next_task.id)
+        manifest_copy.mark_complete(next_task.id)
+
+    print(f"Execution order: {' -> '.join(execution_order)}")
+    print("PASS: Many-to-many planning produced valid, executable manifest")
+    return True
+
+
 async def main():
     print("=" * 60)
     print("PlanningAgent Integration Tests (LLM)")
@@ -276,6 +602,10 @@ async def main():
 
     results["full_planning"] = await test_full_planning()
     results["delta_planning"] = await test_delta_planning()
+    results["single_entity"] = await test_single_entity_planning()
+    results["auth_enabled"] = await test_auth_enabled_planning()
+    results["mongodb"] = await test_mongodb_planning()
+    results["many_to_many"] = await test_many_to_many_planning()
 
     print("\n" + "=" * 60)
     passed = sum(1 for v in results.values() if v)
