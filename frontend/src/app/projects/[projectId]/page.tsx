@@ -4,7 +4,7 @@ import { useReducer, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { appReducer, initialState } from "@/lib/reducer";
 import { useWebSocket } from "@/lib/websocket";
-import { getProject, getFileTree } from "@/lib/api";
+import { getProject, getFileTree, stopProject } from "@/lib/api";
 import ChatPanel from "@/components/ChatPanel";
 import FileExplorer from "@/components/FileExplorer";
 import FileViewer from "@/components/FileViewer";
@@ -52,8 +52,9 @@ export default function WorkspacePage() {
   const [rightTab, setRightTab] = useState<"preview" | "status">("preview");
   const [overviewTab, setOverviewTab] = useState<
     "database" | "capabilities" | "progress"
-  >("database");
+  >("progress");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [deploying, setDeploying] = useState(false);
 
   // Load project on mount
   useEffect(() => {
@@ -147,6 +148,49 @@ export default function WorkspacePage() {
       // ignore
     }
   };
+  const projectState = state.project?.state || "created";
+  const colorClass = STATE_COLORS[projectState] || STATE_COLORS.created;
+  const isDeployingState =
+    projectState === "building" || projectState === "generating";
+  const canDeploy =
+    projectState === "created" ||
+    projectState === "scaffolded" ||
+    projectState === "stopped" ||
+    projectState === "error";
+  const isRunning = projectState === "running";
+
+  useEffect(() => {
+    if (projectState === "running" || projectState === "error") {
+      setDeploying(false);
+    }
+  }, [projectState]);
+
+  const handleDeployClick = useCallback(() => {
+    if (!canDeploy) return;
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Deploy this backend now? This will validate the code, build Docker images, start containers, and run health checks."
+      );
+      if (!confirmed) return;
+    }
+    setDeploying(true);
+    handleSend(
+      "Deploy this backend: validate the code, build Docker images, start the containers, and run health checks."
+    );
+  }, [canDeploy, handleSend]);
+
+  const handleStopDeploy = useCallback(async () => {
+    handleStop();
+    try {
+      await stopProject(projectId);
+      const project = await getProject(projectId);
+      dispatch({ type: "SET_PROJECT", project });
+    } catch (e) {
+      console.error("Failed to stop project:", e);
+    } finally {
+      setDeploying(false);
+    }
+  }, [handleStop, projectId]);
 
   if (loading) {
     return (
@@ -155,9 +199,6 @@ export default function WorkspacePage() {
       </div>
     );
   }
-
-  const projectState = state.project?.state || "created";
-  const colorClass = STATE_COLORS[projectState] || STATE_COLORS.created;
 
   return (
     <div className="min-h-screen bg-[#F4F4F4] py-4">
@@ -195,6 +236,28 @@ export default function WorkspacePage() {
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
             {projectState}
           </span>
+
+          <button
+            type="button"
+            onClick={isRunning ? handleStopDeploy : handleDeployClick}
+            disabled={
+              deploying || state.isAgentWorking || isDeployingState || (!isRunning && !canDeploy)
+            }
+            className={clsx(
+              "ml-3 inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full border transition-colors",
+              isRunning
+                ? "border-red-500 text-red-600 hover:bg-red-50"
+                : "border-black text-black hover:bg-black hover:text-white",
+              (deploying || state.isAgentWorking || isDeployingState || (!isRunning && !canDeploy)) &&
+                "opacity-50 cursor-not-allowed"
+            )}
+          >
+            {isRunning
+              ? "Stop"
+              : deploying || isDeployingState
+                ? "Deploying..."
+                : "Deploy"}
+          </button>
 
           {state.swaggerUrl && (
             <a
@@ -511,6 +574,19 @@ export default function WorkspacePage() {
                     <div className="flex items-center gap-4">
                       <button
                         type="button"
+                        onClick={() => setOverviewTab("progress")}
+                        className={clsx(
+                          "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
+                          overviewTab === "progress"
+                            ? "border-black text-gray-900"
+                            : "text-gray-400 hover:text-gray-600"
+                        )}
+                      >
+                        <Activity className="w-3.5 h-3.5" />
+                        Progress
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setOverviewTab("database")}
                         className={clsx(
                           "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
@@ -535,19 +611,6 @@ export default function WorkspacePage() {
                         <Zap className="w-3.5 h-3.5" />
                         Capabilities
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setOverviewTab("progress")}
-                        className={clsx(
-                          "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
-                          overviewTab === "progress"
-                            ? "border-black text-gray-900"
-                            : "text-gray-400 hover:text-gray-600"
-                        )}
-                      >
-                        <Activity className="w-3.5 h-3.5" />
-                        Progress
-                      </button>
                     </div>
                     <span className="text-[11px] px-3 py-1 rounded-full border border-border bg-white text-gray-600">
                       <span
@@ -560,6 +623,12 @@ export default function WorkspacePage() {
                     </span>
                   </div>
                   <div className="p-4 md:p-6 flex-1 overflow-y-auto text-sm text-text-secondary">
+                    {overviewTab === "progress" && (
+                      <WorkspaceProgressView
+                        projectState={projectState}
+                        isAgentWorking={state.isAgentWorking}
+                      />
+                    )}
                     {overviewTab === "database" && (
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900 mb-1">
@@ -587,11 +656,9 @@ export default function WorkspacePage() {
                         <WorkspaceCapabilitiesView
                           projectId={projectId}
                           swaggerUrl={state.swaggerUrl}
+                          apiUrl={state.apiUrl}
                         />
                       </div>
-                    )}
-                    {overviewTab === "progress" && (
-                      <WorkspaceProgressView projectState={projectState} />
                     )}
                   </div>
                 </div>

@@ -116,3 +116,35 @@ async def get_build_errors(project_dir: Path, build_output: str | None = None) -
             return ""
         build_output = output
     return _parse_build_output(build_output)
+
+
+def parse_up_output(output: str) -> str:
+    """Extract a short, user-friendly error message from docker compose up output."""
+    if not output:
+        return "docker compose up failed (no output)."
+
+    # Common case: port already in use on host
+    port_conflict = re.search(
+        r"Bind for 0\.0\.0\.0:(\d+)\s+failed: port is already allocated", output
+    )
+    if port_conflict:
+        port = port_conflict.group(1)
+        return (
+            f"Port {port} is already in use on the host. "
+            f"Stop or remove the conflicting container, or choose a different port."
+        )
+
+    # Fallback: last line mentioning error/failed
+    lines = output.splitlines()
+    for line in reversed(lines):
+        line = line.strip()
+        if line and ("error" in line.lower() or "failed" in line.lower()):
+            return line[-500:] if len(line) > 500 else line
+
+    # Last non-empty line as a generic summary
+    for line in reversed(lines):
+        line = line.strip()
+        if line:
+            return line[-500:] if len(line) > 500 else line
+
+    return "docker compose up failed (see logs for details)."

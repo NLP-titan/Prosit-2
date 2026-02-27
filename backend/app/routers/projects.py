@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from app.models.project import ProjectState
 from app.services import project as project_svc
 from app.services import docker as docker_svc
 from app.services import preview as preview_svc
@@ -98,3 +99,16 @@ async def get_capabilities_preview(project_id: str):
     if spec is None:
         raise HTTPException(404, "Spec not available yet")
     return preview_svc.build_capabilities_preview(spec)
+
+
+@router.post("/{project_id}/stop")
+async def stop_project(project_id: str):
+    """Stop a project's containers and mark it as stopped."""
+    p = await project_svc.get_project(project_id)
+    if p is None:
+        raise HTTPException(404, "Project not found")
+    if p.directory.exists() and (p.directory / "docker-compose.yml").exists():
+        await docker_svc.compose_down(p.directory)
+    p.state = ProjectState.STOPPED
+    await project_svc.update_project(p)
+    return {"ok": True}

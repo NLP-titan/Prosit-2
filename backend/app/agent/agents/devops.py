@@ -121,16 +121,20 @@ class DevOpsAgent(BaseAgent):
             data={"tool": "docker_compose_up", "result": up_result[:2000]},
         )
         if "SUCCESS" not in up_result and "failed" in up_result.lower():
+            parsed_up = docker_svc.parse_up_output(up_result)
             self._result = AgentResult(
                 status="error",
-                error="Docker compose up failed.",
+                error=f"Docker compose up failed: {parsed_up}",
                 state_updates={
                     "error_file_path": None,
-                    "suggested_fix": "Check docker-compose.yml and container logs. Ensure ports are free.",
+                    "suggested_fix": parsed_up
+                    or "Check docker-compose.yml and container logs. Ensure ports are free.",
                     "build_error": up_result[-2000:],
                     "suggested_agent": "scaffold",
                 },
             )
+            for event in msg(f"Compose up failed: {parsed_up[:200]}..."):
+                yield event
             return
 
         # 4. Logs and health check (retry up to 3 times)

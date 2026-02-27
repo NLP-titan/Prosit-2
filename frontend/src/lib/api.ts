@@ -87,6 +87,13 @@ export async function getCapabilitiesPreview(projectId: string): Promise<Capabil
   return res.json();
 }
 
+export async function stopProject(projectId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/stop`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error("Failed to stop project");
+  }
+}
+
 export function getWsUrl(projectId: string): string {
   const wsBase = (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000");
   return `${wsBase}/ws/chat/${projectId}`;

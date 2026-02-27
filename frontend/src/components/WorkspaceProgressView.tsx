@@ -4,6 +4,7 @@ import { Check, Clock } from "lucide-react";
 
 interface Props {
   projectState: string;
+  isAgentWorking: boolean;
 }
 
 type StepStatus = "complete" | "loading" | "pending";
@@ -15,24 +16,34 @@ const STEPS = [
   "Publish securely to cloud",
 ] as const;
 
-function computeStatuses(projectState: string): StepStatus[] {
+function computeStatuses(
+  projectState: string,
+  isAgentWorking: boolean
+): StepStatus[] {
   switch (projectState) {
-    case "running":
-      return ["complete", "complete", "complete", "complete"];
+    case "created":
+      return [isAgentWorking ? "loading" : "pending", "pending", "pending", "pending"];
     case "scaffolded":
-      return ["complete", "complete", "complete", "pending"];
+      return ["complete", "loading", "pending", "pending"];
     case "building":
     case "generating":
       return ["complete", "complete", "loading", "pending"];
+    case "running":
+      return ["complete", "complete", "complete", "complete"];
     case "error":
       return ["complete", "complete", "pending", "pending"];
+    case "stopped":
+      return ["complete", "complete", "complete", "pending"];
     default:
-      return ["loading", "pending", "pending", "pending"];
+      return ["pending", "pending", "pending", "pending"];
   }
 }
 
-export default function WorkspaceProgressView({ projectState }: Props) {
-  const statuses = computeStatuses(projectState);
+export default function WorkspaceProgressView({
+  projectState,
+  isAgentWorking,
+}: Props) {
+  const statuses = computeStatuses(projectState, isAgentWorking);
 
   return (
     <div className="bg-white border border-border rounded-[24px] p-6 md:p-8 max-w-xl">
