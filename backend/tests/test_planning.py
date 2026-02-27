@@ -239,16 +239,25 @@ def test_manifest_append_tasks():
 def test_template_registry_lookup():
     from app.generator.scaffold import (
         TEMPLATE_REGISTRY,
-        ADDON_REGISTRY,
         get_template_dir,
-        get_available_templates,
-        get_compatible_addons,
     )
 
     assert "fastapi-postgres" in TEMPLATE_REGISTRY
+    assert "fastapi-mongodb" in TEMPLATE_REGISTRY
+    assert "fastapi-mysql" in TEMPLATE_REGISTRY
+
     fp_template = TEMPLATE_REGISTRY["fastapi-postgres"]
     assert fp_template.name == "fastapi-postgres"
     assert fp_template.path.name == "fastapi-postgres"
+
+    mongo_template = TEMPLATE_REGISTRY["fastapi-mongodb"]
+    assert mongo_template.path.name == "fastapi-mongodb"
+    assert "auth" in mongo_template.supported_addons
+    assert "relations" not in mongo_template.supported_addons
+
+    mysql_template = TEMPLATE_REGISTRY["fastapi-mysql"]
+    assert mysql_template.path.name == "fastapi-mysql"
+    assert "relations" in mysql_template.supported_addons
 
     template_dir = get_template_dir("fastapi-postgres")
     assert template_dir == fp_template.path
@@ -277,10 +286,22 @@ def test_addon_registry():
     auth = ADDON_REGISTRY["auth"]
     assert auth.priority == 1
     assert "fastapi-postgres" in auth.compatible_bases
+    assert "fastapi-mongodb" in auth.compatible_bases
+    assert "fastapi-mysql" in auth.compatible_bases
 
-    compatible = get_compatible_addons("fastapi-postgres")
-    addon_names = {a.name for a in compatible}
-    assert addon_names == {"auth", "relations", "redis"}
+    relations = ADDON_REGISTRY["relations"]
+    assert "fastapi-postgres" in relations.compatible_bases
+    assert "fastapi-mysql" in relations.compatible_bases
+    assert "fastapi-mongodb" not in relations.compatible_bases
+
+    compatible_pg = get_compatible_addons("fastapi-postgres")
+    assert {a.name for a in compatible_pg} == {"auth", "relations", "redis"}
+
+    compatible_mongo = get_compatible_addons("fastapi-mongodb")
+    assert {a.name for a in compatible_mongo} == {"auth", "redis"}
+
+    compatible_mysql = get_compatible_addons("fastapi-mysql")
+    assert {a.name for a in compatible_mysql} == {"auth", "relations", "redis"}
     print("  PASS: addon registry")
 
 
@@ -288,13 +309,270 @@ def test_get_available_templates():
     from app.generator.scaffold import get_available_templates
 
     templates = get_available_templates()
-    assert len(templates) >= 1
+    assert len(templates) >= 3
     names = {t.name for t in templates}
-    assert "fastapi-postgres" in names
+    assert names == {"fastapi-postgres", "fastapi-mongodb", "fastapi-mysql"}
     print("  PASS: get_available_templates")
 
 
-# ── 6. submit_plan sentinel parsing ─────────────────────────────
+# ── 6. Database-to-template mapping ──────────────────────────────
+
+
+def test_database_to_template_mapping():
+    from app.generator.scaffold import get_template_for_database
+
+    assert get_template_for_database("postgresql") == "fastapi-postgres"
+    assert get_template_for_database("mongodb") == "fastapi-mongodb"
+    assert get_template_for_database("mysql") == "fastapi-mysql"
+    print("  PASS: database-to-template mapping")
+
+
+def test_database_to_template_unknown_raises():
+    from app.generator.scaffold import get_template_for_database
+
+    try:
+        get_template_for_database("oracle")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "oracle" in str(e)
+        assert "postgresql" in str(e)
+    print("  PASS: unknown database raises ValueError")
+
+
+# ── 7. Edge cases — no spec, single entity, empty entities ──────
+
+
+def test_no_spec_error_guard():
+    """Agent should yield error and set result.status='error' when spec is None."""
+    import asyncio
+    from app.agent.agents.planning import PlanningAgent
+    from app.models.project import Project
+
+    agent = PlanningAgent()
+    state = SharedState(project_id="test-no-spec", current_phase=Phase.PLANNING)
+    state.spec = None
+
+    project = Project(id="test-no-spec", name="test", app_port=9001, db_port=5501)
+
+    events = []
+    async def collect():
+        async for event in agent.run(state=state, project=project):
+            events.append(event)
+        return await agent.get_result()
+
+    loop = asyncio.new_event_loop()
+    result = loop.run_until_complete(collect())
+    loop.close()
+
+    assert len(events) == 1
+    assert events[0].type == "error"
+    assert "No ProjectSpec" in events[0].data["message"]
+
+    assert result.status == "error"
+    assert "No ProjectSpec" in result.error
+    print("  PASS: no spec error guard")
+
+
+def test_single_entity_message_construction():
+    """Verify message construction for a single entity with no relationships."""
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="Product",
+                fields=[
+                    FieldSpec(name="name", type="str", nullable=False),
+                    FieldSpec(name="price", type="float", nullable=False),
+                ],
+            ),
+        ],
+        database="postgresql",
+    )
+    state = SharedState(project_id="test-single", current_phase=Phase.PLANNING)
+    state.spec = spec
+
+    spec_json = json.dumps(state.spec.to_dict(), indent=2)
+    content = f"## Project Spec\n```json\n{spec_json}\n```\n\nProduce a complete TaskManifest for this project."
+
+    assert "Product" in content
+    assert "relationships" in content
+    assert '"relationships": []' in content
+    assert "complete TaskManifest" in content
+    print("  PASS: single entity message construction")
+
+
+def test_auth_required_in_spec():
+    """Verify auth_required flag is serialized and round-trips correctly."""
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(
+                name="User",
+                fields=[FieldSpec(name="email", type="str", nullable=False, unique=True)],
+            ),
+        ],
+        database="postgresql",
+        auth_required=True,
+    )
+    spec_dict = spec.to_dict()
+    assert spec_dict["auth_required"] is True
+
+    spec_json = json.dumps(spec_dict)
+    assert '"auth_required": true' in spec_json
+
+    spec_back = ProjectSpec.from_dict(json.loads(spec_json))
+    assert spec_back.auth_required is True
+    print("  PASS: auth_required in spec")
+
+
+def test_many_to_many_relationship_serialization():
+    """Verify many_to_many relationship round-trips correctly."""
+    spec = ProjectSpec(
+        entities=[
+            EntitySpec(name="Student", fields=[FieldSpec(name="name", type="str")]),
+            EntitySpec(name="Course", fields=[FieldSpec(name="title", type="str")]),
+        ],
+        relationships=[
+            Relationship(entity_a="Student", entity_b="Course", type="many_to_many"),
+        ],
+    )
+    spec_dict = spec.to_dict()
+    assert spec_dict["relationships"][0]["type"] == "many_to_many"
+
+    spec_back = ProjectSpec.from_dict(spec_dict)
+    assert spec_back.relationships[0].type == "many_to_many"
+    print("  PASS: many_to_many relationship serialization")
+
+
+# ── 8. Manifest validation helpers ──────────────────────────────
+
+VALID_TASK_TYPES = {"scaffold", "create_models", "create_routes", "docker_up"}
+VALID_AGENTS = {"scaffold", "database", "api", "devops"}
+
+
+def validate_manifest_structure(manifest: TaskManifest) -> list[str]:
+    """Validate manifest structure and return list of issues."""
+    issues = []
+    if not manifest.tasks:
+        issues.append("Manifest has no tasks")
+        return issues
+
+    task_ids = {t.id for t in manifest.tasks}
+    if len(task_ids) != len(manifest.tasks):
+        issues.append("Duplicate task IDs detected")
+
+    for task in manifest.tasks:
+        if not task.id:
+            issues.append(f"Task missing id")
+        if task.type not in VALID_TASK_TYPES:
+            issues.append(f"Task '{task.id}' has invalid type: {task.type}")
+        if task.agent not in VALID_AGENTS:
+            issues.append(f"Task '{task.id}' has invalid agent: {task.agent}")
+        for dep in task.dependencies:
+            if dep not in task_ids:
+                issues.append(f"Task '{task.id}' depends on unknown task: {dep}")
+
+    scaffold_tasks = [t for t in manifest.tasks if t.type == "scaffold"]
+    if not scaffold_tasks:
+        issues.append("No scaffold task found")
+    elif scaffold_tasks[0].dependencies:
+        issues.append("Scaffold task should have no dependencies")
+
+    docker_tasks = [t for t in manifest.tasks if t.type == "docker_up"]
+    if not docker_tasks:
+        issues.append("No docker_up task found")
+
+    return issues
+
+
+def test_manifest_validation_valid():
+    manifest = make_bookstore_manifest()
+    issues = validate_manifest_structure(manifest)
+    assert issues == [], f"Expected no issues, got: {issues}"
+    print("  PASS: manifest validation (valid manifest)")
+
+
+def test_manifest_validation_missing_scaffold():
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="create_models", description="Model", agent="database"),
+        Task(id="t2", type="docker_up", description="Docker", agent="devops", dependencies=["t1"]),
+    ])
+    issues = validate_manifest_structure(manifest)
+    assert any("No scaffold" in i for i in issues)
+    print("  PASS: manifest validation catches missing scaffold")
+
+
+def test_manifest_validation_missing_docker():
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="scaffold", description="Scaffold", agent="scaffold"),
+        Task(id="t2", type="create_models", description="Model", agent="database", dependencies=["t1"]),
+    ])
+    issues = validate_manifest_structure(manifest)
+    assert any("No docker_up" in i for i in issues)
+    print("  PASS: manifest validation catches missing docker_up")
+
+
+def test_manifest_validation_invalid_type():
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="scaffold", description="Scaffold", agent="scaffold"),
+        Task(id="t2", type="invalid_type", description="Bad", agent="database", dependencies=["t1"]),
+        Task(id="t3", type="docker_up", description="Docker", agent="devops", dependencies=["t2"]),
+    ])
+    issues = validate_manifest_structure(manifest)
+    assert any("invalid type" in i for i in issues)
+    print("  PASS: manifest validation catches invalid task type")
+
+
+def test_manifest_validation_broken_dependency():
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="scaffold", description="Scaffold", agent="scaffold"),
+        Task(id="t2", type="create_models", description="Model", agent="database", dependencies=["t99"]),
+        Task(id="t3", type="docker_up", description="Docker", agent="devops", dependencies=["t2"]),
+    ])
+    issues = validate_manifest_structure(manifest)
+    assert any("unknown task" in i for i in issues)
+    print("  PASS: manifest validation catches broken dependency")
+
+
+def test_manifest_validation_duplicate_ids():
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="scaffold", description="Scaffold", agent="scaffold"),
+        Task(id="t1", type="create_models", description="Model", agent="database"),
+        Task(id="t2", type="docker_up", description="Docker", agent="devops", dependencies=["t1"]),
+    ])
+    issues = validate_manifest_structure(manifest)
+    assert any("Duplicate" in i for i in issues)
+    print("  PASS: manifest validation catches duplicate IDs")
+
+
+def test_task_context_completeness():
+    """Verify that a well-formed manifest has populated context dicts."""
+    manifest = TaskManifest(tasks=[
+        Task(id="t1", type="scaffold", description="Scaffold", agent="scaffold",
+             context={"template_name": "fastapi-postgres"}),
+        Task(id="t2", type="create_models", description="Create Book model", agent="database",
+             dependencies=["t1"],
+             context={"entity": "Book", "fields": [{"name": "title", "type": "str"}], "relationships": []}),
+        Task(id="t3", type="create_routes", description="Create Book routes", agent="api",
+             dependencies=["t2"],
+             context={"entity": "Book", "fields": [{"name": "title", "type": "str"}]}),
+        Task(id="t4", type="docker_up", description="Docker", agent="devops",
+             dependencies=["t3"], context={}),
+    ])
+
+    scaffold = manifest.tasks[0]
+    assert "template_name" in scaffold.context
+
+    model_task = manifest.tasks[1]
+    assert "entity" in model_task.context
+    assert "fields" in model_task.context
+    assert len(model_task.context["fields"]) > 0
+
+    route_task = manifest.tasks[2]
+    assert "entity" in route_task.context
+    assert "fields" in route_task.context
+    print("  PASS: task context completeness")
+
+
+# ── 9. submit_plan sentinel parsing ─────────────────────────────
 
 
 def test_submit_plan_sentinel_parsing():
@@ -337,6 +615,19 @@ def main():
         ("Unknown template error", test_template_registry_unknown_raises),
         ("Addon registry", test_addon_registry),
         ("Available templates", test_get_available_templates),
+        ("DB-to-template mapping", test_database_to_template_mapping),
+        ("Unknown DB error", test_database_to_template_unknown_raises),
+        ("No spec error guard", test_no_spec_error_guard),
+        ("Single entity message", test_single_entity_message_construction),
+        ("Auth required in spec", test_auth_required_in_spec),
+        ("Many-to-many serialization", test_many_to_many_relationship_serialization),
+        ("Manifest validation (valid)", test_manifest_validation_valid),
+        ("Missing scaffold", test_manifest_validation_missing_scaffold),
+        ("Missing docker_up", test_manifest_validation_missing_docker),
+        ("Invalid task type", test_manifest_validation_invalid_type),
+        ("Broken dependency", test_manifest_validation_broken_dependency),
+        ("Duplicate task IDs", test_manifest_validation_duplicate_ids),
+        ("Task context completeness", test_task_context_completeness),
         ("submit_plan sentinel", test_submit_plan_sentinel_parsing),
         ("submit_plan invalid", test_submit_plan_sentinel_invalid),
     ]
