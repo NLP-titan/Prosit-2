@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.services import project as project_svc
 from app.services import docker as docker_svc
+from app.services import preview as preview_svc
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -79,3 +80,21 @@ async def get_file_content(project_id: str, path: str):
     except Exception:
         raise HTTPException(500, "Failed to read file")
     return PlainTextResponse(content)
+
+
+@router.get("/{project_id}/preview/database")
+async def get_database_preview(project_id: str):
+    """Return a database preview derived from the ProjectSpec, without requiring a live app."""
+    spec = await preview_svc.get_project_spec(project_id)
+    if spec is None:
+        raise HTTPException(404, "Spec not available yet")
+    return preview_svc.build_database_preview(spec)
+
+
+@router.get("/{project_id}/preview/capabilities")
+async def get_capabilities_preview(project_id: str):
+    """Return a capabilities preview derived from the ProjectSpec, without requiring a live app."""
+    spec = await preview_svc.get_project_spec(project_id)
+    if spec is None:
+        raise HTTPException(404, "Spec not available yet")
+    return preview_svc.build_capabilities_preview(spec)
