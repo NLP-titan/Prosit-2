@@ -273,7 +273,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         messages: [
           ...state.messages,
-          { id: nextId(), role: "assistant", content: `Error: ${action.message}` },
+          { id: nextId(), role: "assistant", content: action.message },
         ],
         isAgentWorking: false,
       };
@@ -395,7 +395,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           });
         }
       }
-      if (action.to === "complete") {
+      if (action.to === "validation" || action.to === "complete") {
         const bp = findBuildProgress(msgs);
         if (bp) {
           const tasks = (bp.msg.buildTasks || []).map((t) => ({

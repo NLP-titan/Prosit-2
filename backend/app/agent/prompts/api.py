@@ -89,4 +89,7 @@ Read `app/main.py` (or equivalent) first to understand the existing pattern.
 - After writing all files, commit with message like "Add {Entity} API (schemas, service, router)".
 - Never expose internal database details — always use Pydantic schemas.
 - Match the coding style and patterns already established in the project.
+- If you use any types that require extra packages (e.g. `EmailStr` needs `email-validator`, \
+`HttpUrl` needs `validators`), read `requirements.txt` and add the missing package if it's not \
+already listed. Use `pydantic[email]` instead of bare `pydantic` when `EmailStr` is needed.
 """

@@ -240,18 +240,24 @@ class OrchestratorSession:
                 yield event
             return
 
-        # 2. If in implementation/validation/complete and a task is running,
+        # 2. If in validation phase with no active agent, user is triggering deployment
+        if self.state.current_phase == Phase.VALIDATION and not self._active_agent:
+            logger.info("[Orchestrator] User triggered deployment in validation phase")
+            async for event in self._run_validation():
+                yield event
+            return
+
+        # 3. If in implementation/complete and a task is running,
         #    classify the interruption
         if self.state.current_phase in (
             Phase.IMPLEMENTATION,
-            Phase.VALIDATION,
             Phase.COMPLETE,
         ):
             async for event in self._handle_interruption_flow(message):
                 yield event
             return
 
-        # 3. Route to current phase
+        # 4. Route to current phase
         logger.info(
             "[Orchestrator] handle_user_message → phase=%s",
             self.state.current_phase.value,
@@ -416,12 +422,31 @@ class OrchestratorSession:
             if task is None:
                 if self.state.manifest.all_complete():
                     break
+                # Check if only docker_up tasks remain — treat as "code done"
+                remaining = [
+                    t for t in self.state.manifest.tasks
+                    if t.status == "pending" and t.type == "docker_up"
+                ]
+                all_non_docker_done = remaining and all(
+                    t.status in ("completed", "pending")
+                    for t in self.state.manifest.tasks
+                ) and all(
+                    t.type == "docker_up"
+                    for t in self.state.manifest.tasks
+                    if t.status == "pending"
+                )
+                if all_non_docker_done:
+                    break  # Code is done, deployment waits for user
                 # No runnable task but not all complete — stuck
                 yield AgentEvent(
                     type="error",
                     data={"message": "No runnable tasks available (possible dependency deadlock)"},
                 )
                 return
+
+            # Skip docker_up tasks — deployment is user-triggered
+            if task.type == "docker_up":
+                break
 
             self._current_task = task
             task.status = "running"
@@ -495,14 +520,20 @@ class OrchestratorSession:
                     yield AgentEvent(
                         type="error",
                         data={
-                            "message": f"Task '{task.description}' failed after 3 retries: {result.error}"
+                            "message": (
+                                "Something went wrong while building your project. "
+                                "You can try clicking **Deploy** to retry, or adjust your requirements."
+                            )
                         },
                     )
                     await self.save_state()
                     return
 
-        # All tasks complete — transition to validation
-        status_msg = "All tasks complete! Validating your project..."
+        # All code tasks complete — wait for user to trigger deployment
+        status_msg = (
+            "Your backend code is ready! "
+            "Review the generated files, then click **Deploy** when you're ready to build and run it."
+        )
         yield AgentEvent(type="agent_message_start")
         yield AgentEvent(
             type="agent_message_delta",
@@ -512,14 +543,14 @@ class OrchestratorSession:
         await self._track_assistant_message(status_msg)
 
         self.state.current_phase = Phase.VALIDATION
+        logger.info("[Orchestrator] Phase transition: implementation → validation (awaiting deploy)")
         yield AgentEvent(
             type="phase_transition",
             data={"from": "implementation", "to": "validation"},
         )
         await self.save_state()
 
-        async for event in self._run_validation():
-            yield event
+        yield AgentEvent(type="waiting_for_user")
 
     # ── Validation phase ────────────────────────────────────────
 
@@ -567,9 +598,16 @@ class OrchestratorSession:
             )
             yield AgentEvent(
                 type="error",
-                data={"message": f"Validation failed: {result.error}"},
+                data={
+                    "message": (
+                        "Deployment didn't complete successfully. "
+                        "This can happen if the app has startup errors or the health check timed out. "
+                        "You can click **Deploy** to try again."
+                    )
+                },
             )
             await self.save_state()
+            yield AgentEvent(type="waiting_for_user")
 
     # ── Interruption handling ───────────────────────────────────
 
