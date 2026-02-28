@@ -31,7 +31,7 @@ import {
 import clsx from "clsx";
 
 const STATE_COLORS: Record<string, string> = {
-  running: "bg-[#D4F79A] text-black",
+  running: "bg-accent/20 text-accent",
   error: "bg-red-100 text-red-700",
   building: "bg-amber-100 text-amber-800",
   generating: "bg-sky-100 text-sky-800",
@@ -201,8 +201,8 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F4F4] py-4">
-      <div className="max-w-[1600px] mx-auto h-[calc(100vh-2rem)] flex flex-col rounded-[32px] border border-border bg-white shadow-sm overflow-hidden">
+    <div className="min-h-screen bg-bg-secondary py-4">
+      <div className="max-w-[1600px] mx-auto h-[calc(100vh-2rem)] flex flex-col rounded-[32px] border border-border bg-bg-primary shadow-sm overflow-hidden">
         {/* Header */}
         <header className="px-4 sm:px-6 py-3 border-b border-border flex items-center gap-3 shrink-0">
           <button
@@ -214,14 +214,14 @@ export default function WorkspacePage() {
           </button>
 
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-[#D4F79A] flex items-center justify-center">
-              <Bot className="w-4 h-4 text-black" />
+            <div className="w-9 h-9 rounded-2xl bg-accent/20 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-accent" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
                 Mesora agent
               </p>
-              <h1 className="text-sm font-semibold text-gray-900 truncate">
+              <h1 className="text-sm font-semibold text-text-primary truncate">
                 {state.project?.name || state.project?.id || projectId}
               </h1>
             </div>
@@ -247,7 +247,7 @@ export default function WorkspacePage() {
               "ml-3 inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full border transition-colors",
               isRunning
                 ? "border-red-500 text-red-600 hover:bg-red-50"
-                : "border-black text-black hover:bg-black hover:text-white",
+                : "border-text-primary text-text-primary hover:bg-text-primary hover:text-bg-primary",
               (deploying || state.isAgentWorking || isDeployingState || (!isRunning && !canDeploy)) &&
                 "opacity-50 cursor-not-allowed"
             )}
@@ -336,15 +336,15 @@ export default function WorkspacePage() {
         </header>
 
         {/* Mode switch */}
-        <div className="px-4 sm:px-6 pt-3 flex items-center gap-2 border-b border-border bg-[#F4F4F4]">
+        <div className="px-4 sm:px-6 pt-3 flex items-center gap-2 border-b border-border bg-bg-secondary">
           <button
             type="button"
             onClick={() => setMode("overview")}
             className={clsx(
               "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
               mode === "overview"
-                ? "bg-black text-white"
-                : "text-text-secondary hover:bg-bg-secondary"
+                ? "bg-text-primary text-bg-primary"
+                : "text-text-secondary hover:bg-bg-tertiary"
             )}
           >
             Overview
@@ -355,8 +355,8 @@ export default function WorkspacePage() {
             className={clsx(
               "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
               mode === "advanced"
-                ? "bg-black text-white"
-                : "text-text-secondary hover:bg-bg-secondary"
+                ? "bg-text-primary text-bg-primary"
+                : "text-text-secondary hover:bg-bg-tertiary"
             )}
           >
             Advanced (files &amp; code)
@@ -364,13 +364,13 @@ export default function WorkspacePage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 bg-[#F4F4F4] px-2 pb-2 pt-2 sm:px-3 sm:pb-3 sm:pt-3">
+        <div className="flex-1 min-h-0 bg-bg-secondary px-2 pb-2 pt-2 sm:px-3 sm:pb-3 sm:pt-3">
           {mode === "advanced" ? (
             <Allotment proportionalLayout={false}>
               {/* Left: File Explorer */}
               <Allotment.Pane preferredSize={260} minSize={140} maxSize={420}>
-                <div className="h-full flex flex-col bg-white rounded-[24px] border border-border overflow-hidden">
-                  <div className="px-3 py-2 border-b border-border flex items-center justify-between bg-[#FAFAFA]">
+                <div className="h-full flex flex-col bg-bg-primary rounded-[24px] border border-border overflow-hidden">
+                  <div className="px-3 py-2 border-b border-border flex items-center justify-between bg-surface">
                     <div className="flex items-center gap-2">
                       <Layout className="w-3.5 h-3.5 text-text-muted" />
                       <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-[0.16em]">
@@ -393,31 +393,31 @@ export default function WorkspacePage() {
 
               {/* Center: Chat */}
               <Allotment.Pane minSize={320}>
-                <div className="h-full flex flex-col bg-[#F4F4F4] rounded-[24px] border border-border overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border bg-white/80 flex items-center justify-between">
+                <div className="h-full flex flex-col bg-bg-secondary rounded-[24px] border border-border overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border bg-bg-primary/80 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-full bg-text-primary text-bg-primary flex items-center justify-center">
                         <Bot className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-semibold text-gray-900">
+                        <p className="text-xs font-semibold text-text-primary">
                           Conversation
                         </p>
-                        <p className="text-[11px] text-gray-500">
+                        <p className="text-[11px] text-text-muted">
                           Tell the agent what backend you need.
                         </p>
                       </div>
                     </div>
                     {state.isAgentWorking && (
-                      <span className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-600 bg-white px-3 py-1 rounded-full shadow-sm">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#D4F79A] animate-pulse" />
+                      <span className="inline-flex items-center gap-2 text-[11px] font-medium text-text-secondary bg-bg-primary px-3 py-1 rounded-full shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                         Working
                       </span>
                     )}
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {showOnboarding && (
-                      <div className="mx-4 mt-3 mb-1 rounded-2xl bg-white border border-border px-4 py-3 text-xs text-text-secondary">
+                      <div className="mx-4 mt-3 mb-1 rounded-2xl bg-bg-primary border border-border px-4 py-3 text-xs text-text-secondary">
                         <p className="font-medium text-text-primary mb-1.5">
                           New here? Here&apos;s how this workspace works:
                         </p>
@@ -469,8 +469,8 @@ export default function WorkspacePage() {
 
               {/* Right: File Viewer / Status */}
               <Allotment.Pane preferredSize={420} minSize={220}>
-                <div className="h-full flex flex-col bg-white rounded-[24px] border border-border overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-border bg-[#FAFAFA] flex items-center justify-between">
+                <div className="h-full flex flex-col bg-bg-primary rounded-[24px] border border-border overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-border bg-surface flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -478,7 +478,7 @@ export default function WorkspacePage() {
                         className={clsx(
                           "text-xs font-medium px-3 py-1 rounded-full transition-colors",
                           rightTab === "preview"
-                            ? "bg-black text-white"
+                            ? "bg-text-primary text-bg-primary"
                             : "text-text-secondary hover:bg-bg-secondary"
                         )}
                       >
@@ -490,7 +490,7 @@ export default function WorkspacePage() {
                         className={clsx(
                           "text-xs font-medium px-3 py-1 rounded-full transition-colors",
                           rightTab === "status"
-                            ? "bg-black text-white"
+                            ? "bg-text-primary text-bg-primary"
                             : "text-text-secondary hover:bg-bg-secondary"
                         )}
                       >
@@ -532,24 +532,24 @@ export default function WorkspacePage() {
             <Allotment proportionalLayout={false}>
               {/* Left: Chat (simplified) */}
               <Allotment.Pane preferredSize={420} minSize={260} maxSize={520}>
-                <div className="h-full flex flex-col bg-[#F4F4F4] rounded-[24px] border border-border overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border bg-white/80 flex items-center justify-between">
+                <div className="h-full flex flex-col bg-bg-secondary rounded-[24px] border border-border overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border bg-bg-primary/80 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-full bg-text-primary text-bg-primary flex items-center justify-center">
                         <Bot className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-semibold text-gray-900">
+                        <p className="text-xs font-semibold text-text-primary">
                           Mesora Agent
                         </p>
-                        <p className="text-[11px] text-gray-500">
+                        <p className="text-[11px] text-text-muted">
                           Describe in plain English the backend you need.
                         </p>
                       </div>
                     </div>
                     {state.isAgentWorking && (
-                      <span className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-600 bg-white px-3 py-1 rounded-full shadow-sm">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#D4F79A] animate-pulse" />
+                      <span className="inline-flex items-center gap-2 text-[11px] font-medium text-text-secondary bg-bg-primary px-3 py-1 rounded-full shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                         Working
                       </span>
                     )}
@@ -569,8 +569,8 @@ export default function WorkspacePage() {
 
               {/* Right: Database / Capabilities / Progress tabs */}
               <Allotment.Pane minSize={420}>
-                <div className="h-full bg-white rounded-[24px] border border-border overflow-hidden flex flex-col">
-                  <div className="px-4 py-3 border-b border-border bg-[#FAFAFA] flex items-center justify-between">
+                <div className="h-full bg-bg-primary rounded-[24px] border border-border overflow-hidden flex flex-col">
+                  <div className="px-4 py-3 border-b border-border bg-surface flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <button
                         type="button"
@@ -578,8 +578,8 @@ export default function WorkspacePage() {
                         className={clsx(
                           "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
                           overviewTab === "progress"
-                            ? "border-black text-gray-900"
-                            : "text-gray-400 hover:text-gray-600"
+                            ? "border-text-primary text-text-primary"
+                            : "text-text-muted hover:text-text-secondary"
                         )}
                       >
                         <Activity className="w-3.5 h-3.5" />
@@ -591,8 +591,8 @@ export default function WorkspacePage() {
                         className={clsx(
                           "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
                           overviewTab === "database"
-                            ? "border-black text-gray-900"
-                            : "text-gray-400 hover:text-gray-600"
+                            ? "border-text-primary text-text-primary"
+                            : "text-text-muted hover:text-text-secondary"
                         )}
                       >
                         <Database className="w-3.5 h-3.5" />
@@ -604,19 +604,19 @@ export default function WorkspacePage() {
                         className={clsx(
                           "text-xs font-medium pb-1 border-b-2 border-transparent flex items-center gap-1.5",
                           overviewTab === "capabilities"
-                            ? "border-black text-gray-900"
-                            : "text-gray-400 hover:text-gray-600"
+                            ? "border-text-primary text-text-primary"
+                            : "text-text-muted hover:text-text-secondary"
                         )}
                       >
                         <Zap className="w-3.5 h-3.5" />
                         Capabilities
                       </button>
                     </div>
-                    <span className="text-[11px] px-3 py-1 rounded-full border border-border bg-white text-gray-600">
+                    <span className="text-[11px] px-3 py-1 rounded-full border border-border bg-bg-primary text-text-secondary">
                       <span
                         className={clsx(
                           "inline-block w-1.5 h-1.5 rounded-full mr-1",
-                          state.swaggerUrl ? "bg-green-500" : "bg-gray-300"
+                          state.swaggerUrl ? "bg-green-500" : "bg-text-muted"
                         )}
                       />
                       {state.swaggerUrl ? "Live & Connected" : "Draft Mode"}
@@ -631,10 +631,10 @@ export default function WorkspacePage() {
                     )}
                     {overviewTab === "database" && (
                       <div>
-                        <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                        <h2 className="text-lg font-semibold text-text-primary mb-1">
                           Your Data Structure
                         </h2>
-                        <p className="text-xs text-gray-500 mb-4">
+                        <p className="text-xs text-text-muted mb-4">
                           This is how your application&apos;s information is
                           organized securely in the cloud.
                         </p>
@@ -646,10 +646,10 @@ export default function WorkspacePage() {
                     )}
                     {overviewTab === "capabilities" && (
                       <div>
-                        <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                        <h2 className="text-lg font-semibold text-text-primary mb-1">
                           App Capabilities
                         </h2>
-                        <p className="text-xs text-gray-500 mb-4">
+                        <p className="text-xs text-text-muted mb-4">
                           These are the actions your frontend can ask this
                           backend to perform.
                         </p>

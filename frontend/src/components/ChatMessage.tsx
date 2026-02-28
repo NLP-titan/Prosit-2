@@ -22,16 +22,16 @@ export default function ChatMessage({ msg }: { msg: ChatMessageType }) {
       )}
     >
       {!isUser && (
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-white border border-border text-black">
-          <Sparkles className="w-4 h-4 text-[#0E7A3D]" />
+        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-bg-secondary text-text-primary">
+          <Sparkles className="w-4 h-4 text-accent" />
         </div>
       )}
       <div
         className={clsx(
           "max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
           isUser
-            ? "bg-black text-white rounded-tr-sm"
-            : "bg-white border border-border text-text-primary rounded-tl-sm shadow-sm"
+            ? "bg-chat-user-bg text-chat-user-text rounded-tr-sm"
+            : "bg-chat-ai-bg border border-border text-text-primary rounded-tl-sm shadow-sm"
         )}
       >
         <div
@@ -57,7 +57,7 @@ export default function ChatMessage({ msg }: { msg: ChatMessageType }) {
         </div>
       </div>
       {isUser && (
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-black text-white">
+        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-text-primary text-bg-primary">
           <User className="w-4 h-4" />
         </div>
       )}

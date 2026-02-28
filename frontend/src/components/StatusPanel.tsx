@@ -26,8 +26,8 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="border-b border-border bg-[#FAFAFA]">
+    <div className="flex flex-col h-full bg-bg-primary">
+      <div className="border-b border-border bg-surface">
         <div className="flex px-2 py-1.5 gap-1">
           {tabs.map((t) => (
             <button
@@ -36,7 +36,7 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
               className={clsx(
                 "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
                 tab === t.id
-                  ? "bg-black text-white"
+                  ? "bg-text-primary text-bg-primary"
                   : "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
               )}
             >
@@ -58,7 +58,7 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
                   className={clsx(
                     "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px]",
                     projectState === "running"
-                      ? "bg-[#D4F79A] text-black"
+                      ? "bg-accent/20 text-accent"
                       : projectState === "error"
                         ? "bg-red-100 text-red-700"
                         : "bg-bg-secondary text-text-secondary"

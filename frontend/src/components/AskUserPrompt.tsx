@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MessageCircleQuestion } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { ChatMessage } from "@/lib/types";
 import { Button } from "./ui/Button";
 
@@ -28,10 +28,10 @@ export default function AskUserPrompt({ msg, onAnswer }: Props) {
   return (
     <div className="px-4 py-3">
       <div className="flex items-start gap-3">
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-[#D4F79A] text-black">
-          <MessageCircleQuestion className="w-4 h-4" />
+        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-bg-secondary text-text-primary">
+          <Sparkles className="w-4 h-4 text-accent" />
         </div>
-        <div className="min-w-0 flex-1 bg-white border border-border rounded-2xl px-4 py-3 shadow-sm">
+        <div className="min-w-0 flex-1 bg-chat-ai-bg border border-border rounded-2xl px-4 py-3 shadow-sm">
           <p className="text-sm text-text-primary mb-3">
             {msg.content}
           </p>

@@ -63,16 +63,16 @@ export default function BuilderPage() {
   });
 
   return (
-    <div className="min-h-screen bg-white text-text-primary">
+    <div className="min-h-screen bg-bg-primary text-text-primary">
       <SiteNav />
       <main className="py-12 md:py-16">
         <section className="page-shell max-w-5xl">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-gray-900 mb-2">
+              <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-text-primary mb-2">
                 Your backends
               </h1>
-              <p className="text-gray-600 text-sm md:text-base max-w-xl">
+              <p className="text-text-secondary text-sm md:text-base max-w-xl">
                 Every project here is a complete backend workspace the agent has
                 created for you. Open one to chat, inspect the API, and iterate
                 on the design.
@@ -105,7 +105,7 @@ export default function BuilderPage() {
               Loading your backends...
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 bg-[#FAFAFA] rounded-3xl border border-dashed border-border">
+            <div className="text-center py-16 bg-surface rounded-3xl border border-dashed border-border">
               <Database className="w-10 h-10 mx-auto mb-4 text-text-muted opacity-60" />
               <p className="text-text-secondary mb-4">
                 {projects.length === 0

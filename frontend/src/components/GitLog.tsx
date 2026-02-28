@@ -24,10 +24,10 @@ export default function GitLog({ commits }: Props) {
           className="flex items-start gap-3"
         >
           <div className="flex flex-col items-center pt-0.5">
-            <span className="w-2 h-2 rounded-full bg-[#D4F79A]" />
+            <span className="w-2 h-2 rounded-full bg-accent" />
             <span className="flex-1 w-px bg-border mt-1" />
           </div>
-          <div className="min-w-0 flex-1 bg-[#FAFAFA] border border-border rounded-2xl px-3 py-2.5">
+          <div className="min-w-0 flex-1 bg-surface border border-border rounded-2xl px-3 py-2.5">
             <div className="flex items-center gap-2 mb-1">
               <GitCommitHorizontal className="w-4 h-4 text-text-muted shrink-0" />
               <span className="font-mono text-[11px] text-yellow-600 truncate">

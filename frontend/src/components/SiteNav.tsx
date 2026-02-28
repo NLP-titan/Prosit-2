@@ -14,7 +14,7 @@ export default function SiteNav() {
     (href !== "/" && pathname?.startsWith(href));
 
   return (
-    <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border">
+    <nav className="sticky top-0 z-40 bg-bg-primary/80 backdrop-blur-md border-b border-border">
       <div className="page-shell">
         <div className="flex justify-between items-center h-20">
           {/* Logo */}
@@ -22,8 +22,8 @@ export default function SiteNav() {
             href="/"
             className="flex items-center gap-2 cursor-pointer"
           >
-            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-              <Terminal className="w-4 h-4 text-[#D4F79A]" />
+            <div className="w-8 h-8 bg-text-primary rounded-lg flex items-center justify-center">
+              <Terminal className="w-4 h-4 text-accent" />
             </div>
             <span className="font-bold text-xl tracking-tight">
               Mesora.

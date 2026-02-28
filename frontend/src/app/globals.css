@@ -13,6 +13,10 @@
   --text-muted: #a1a1aa;
   --border-color: #e4e4e7;
   --accent: #0e7a3d;          /* Mesora green */
+  --chat-user-bg: #111111;
+  --chat-user-text: #ffffff;
+  --chat-ai-bg: #ffffff;
+  --surface: #FAFAFA;
 }
 
 .dark {
@@ -25,6 +29,10 @@
   --text-muted: #71717a;       /* zinc-500 */
   --border-color: #3f3f46;     /* zinc-700 */
   --accent: #60a5fa;           /* blue-400 */
+  --chat-user-bg: #e4e4e7;
+  --chat-user-text: #18181b;
+  --chat-ai-bg: #27272a;
+  --surface: #27272a;
 }
 
 @theme inline {
@@ -37,6 +45,10 @@
   --color-text-muted: var(--text-muted);
   --color-border: var(--border-color);
   --color-accent: var(--accent);
+  --color-chat-user-bg: var(--chat-user-bg);
+  --color-chat-user-text: var(--chat-user-text);
+  --color-chat-ai-bg: var(--chat-ai-bg);
+  --color-surface: var(--surface);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
