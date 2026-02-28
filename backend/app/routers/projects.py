@@ -57,10 +57,17 @@ async def list_files(project_id: str):
         raise HTTPException(404, "Project not found")
     if not p.directory.exists():
         return []
+    hidden = {".git", "__pycache__", ".pytest_cache"}
+    hidden_files = {"agent.log"}
     files = []
     for f in sorted(p.directory.rglob("*")):
-        if f.is_file() and ".git" not in f.parts:
-            files.append(str(f.relative_to(p.directory)))
+        if not f.is_file():
+            continue
+        if hidden.intersection(f.parts):
+            continue
+        if f.name in hidden_files:
+            continue
+        files.append(str(f.relative_to(p.directory)))
     return files
 
 

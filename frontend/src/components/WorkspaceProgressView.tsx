@@ -13,7 +13,7 @@ const STEPS = [
   "Analyze requirements",
   "Design database structure",
   "Create application actions",
-  "Publish securely to cloud",
+  "Deploy backend",
 ] as const;
 
 function computeStatuses(
@@ -24,14 +24,15 @@ function computeStatuses(
     case "created":
       return [isAgentWorking ? "loading" : "pending", "pending", "pending", "pending"];
     case "scaffolded":
-      return ["complete", "loading", "pending", "pending"];
-    case "building":
+      return ["complete", isAgentWorking ? "loading" : "complete", "pending", "pending"];
     case "generating":
-      return ["complete", "complete", "loading", "pending"];
+      return ["complete", "complete", isAgentWorking ? "loading" : "complete", "pending"];
+    case "building":
+      return ["complete", "complete", "complete", "loading"];
     case "running":
       return ["complete", "complete", "complete", "complete"];
     case "error":
-      return ["complete", "complete", "pending", "pending"];
+      return ["complete", "complete", "complete", "pending"];
     case "stopped":
       return ["complete", "complete", "complete", "pending"];
     default:

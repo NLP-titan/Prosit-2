@@ -118,6 +118,7 @@ export default function WorkspacePage() {
 
   const handleFileSelect = useCallback((path: string) => {
     dispatch({ type: "SELECT_FILE", path });
+    setRightTab("preview");
   }, []);
 
   const handleCloseFile = useCallback(() => {
