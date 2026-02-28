@@ -4,7 +4,7 @@ import { useReducer, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { appReducer, initialState } from "@/lib/reducer";
 import { useWebSocket } from "@/lib/websocket";
-import { getProject, getFileTree, stopProject } from "@/lib/api";
+import { getProject, getFileTree, getChatHistory, stopProject } from "@/lib/api";
 import ChatPanel from "@/components/ChatPanel";
 import FileExplorer from "@/components/FileExplorer";
 import FileViewer from "@/components/FileViewer";
@@ -62,9 +62,22 @@ export default function WorkspacePage() {
       try {
         const project = await getProject(projectId);
         dispatch({ type: "SET_PROJECT", project });
-        // Load file tree
-        const files = await getFileTree(projectId);
+        // Load file tree and chat history in parallel
+        const [files, history] = await Promise.all([
+          getFileTree(projectId),
+          getChatHistory(projectId).catch(() => []),
+        ]);
         dispatch({ type: "SET_FILES", files });
+        if (history.length > 0) {
+          dispatch({
+            type: "SET_MESSAGES",
+            messages: history.map((m, i) => ({
+              id: `hist-${i}`,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            })),
+          });
+        }
       } catch (e) {
         console.error("Failed to load project:", e);
       }
@@ -102,15 +115,6 @@ export default function WorkspacePage() {
     stopAgent();
     dispatch({ type: "AGENT_STOPPED" });
   }, [stopAgent]);
-
-  const handleAnswerAskUser = useCallback(
-    (messageId: string, answer: string) => {
-      dispatch({ type: "MARK_ANSWERED", messageId });
-      dispatch({ type: "ADD_USER_MESSAGE", content: answer });
-      sendMessage(answer);
-    },
-    [sendMessage]
-  );
 
   const handleFileSelect = useCallback((path: string) => {
     dispatch({ type: "SELECT_FILE", path });
@@ -460,7 +464,7 @@ export default function WorkspacePage() {
                         onStop={handleStop}
                         isAgentWorking={state.isAgentWorking}
                         showToolDetails={state.showToolDetails}
-                        onAnswerAskUser={handleAnswerAskUser}
+
                       />
                     </div>
                   </div>
@@ -561,7 +565,6 @@ export default function WorkspacePage() {
                       onStop={handleStop}
                       isAgentWorking={state.isAgentWorking}
                       showToolDetails={state.showToolDetails}
-                      onAnswerAskUser={handleAnswerAskUser}
                     />
                   </div>
                 </div>
