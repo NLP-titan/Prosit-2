@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from app.agent.base import AgentEvent, BaseAgent
@@ -118,6 +119,62 @@ class OrchestratorSession:
         if self._active_agent:
             self._active_agent.cancel()
 
+    # ── Chat message persistence ────────────────────────────────
+
+    async def _persist_message(
+        self, role: str, content: str | None = None,
+        tool_calls: list[dict] | None = None,
+        tool_call_id: str | None = None,
+    ) -> None:
+        """Write a single chat message to the chat_messages table."""
+        db = await get_db()
+        try:
+            await db.execute(
+                """INSERT INTO chat_messages
+                   (project_id, role, content, tool_calls, tool_call_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    self.project.id, role, content,
+                    json.dumps(tool_calls) if tool_calls else None,
+                    tool_call_id,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def _track_assistant_message(self, content: str) -> None:
+        """Add assistant message to in-memory conversation and persist to DB."""
+        self.state.user_conversation.append(
+            {"role": "assistant", "content": content}
+        )
+        await self._persist_message("assistant", content)
+
+    async def _restore_conversation(self) -> None:
+        """Load chat history from chat_messages into state.user_conversation."""
+        db = await get_db()
+        try:
+            cursor = await db.execute(
+                "SELECT role, content FROM chat_messages "
+                "WHERE project_id = ? AND role IN ('user', 'assistant') ORDER BY id",
+                (self.project.id,),
+            )
+            rows = await cursor.fetchall()
+        finally:
+            await db.close()
+
+        self.state.user_conversation = []
+        for row in rows:
+            self.state.user_conversation.append(
+                {"role": row["role"], "content": row["content"] or ""}
+            )
+        if self.state.user_conversation:
+            logger.info(
+                "[Orchestrator] Restored %d conversation messages",
+                len(self.state.user_conversation),
+            )
+
     # ── State persistence ───────────────────────────────────────
 
     async def save_state(self) -> None:
@@ -161,6 +218,9 @@ class OrchestratorSession:
                 self.state.current_phase.value,
             )
 
+        # Always restore conversation history from chat_messages
+        await self._restore_conversation()
+
     # ── Main entry point ────────────────────────────────────────
 
     async def handle_user_message(
@@ -168,10 +228,11 @@ class OrchestratorSession:
     ) -> AsyncGenerator[AgentEvent, None]:
         self._cancelled = False
 
-        # Track conversation
+        # Track conversation (in-memory + DB)
         self.state.user_conversation.append(
             {"role": "user", "content": message}
         )
+        await self._persist_message("user", message)
 
         # 1. If pending ask_user, resume the active agent
         if self._active_agent and self._active_agent.is_waiting_for_user:
@@ -254,9 +315,7 @@ class OrchestratorSession:
             if event.type == "agent_message_delta":
                 text_parts.append(event.data.get("token", ""))
             elif event.type == "agent_message_end" and text_parts:
-                self.state.user_conversation.append(
-                    {"role": "assistant", "content": "".join(text_parts)}
-                )
+                await self._track_assistant_message("".join(text_parts))
                 text_parts.clear()
             if event.type == "ask_user":
                 return  # Paused, waiting for user
@@ -271,12 +330,14 @@ class OrchestratorSession:
                 len(result.spec.entities),
             )
             # Transition to planning
+            status_msg = "Requirements captured! Planning your project structure..."
             yield AgentEvent(type="agent_message_start")
             yield AgentEvent(
                 type="agent_message_delta",
-                data={"token": "Requirements captured! Planning your project structure..."},
+                data={"token": status_msg},
             )
             yield AgentEvent(type="agent_message_end")
+            await self._track_assistant_message(status_msg)
 
             self.state.current_phase = Phase.PLANNING
             logger.info("[Orchestrator] Phase transition: research → planning")
@@ -313,12 +374,14 @@ class OrchestratorSession:
         if result.manifest:
             self.state.manifest = result.manifest
 
+            status_msg = "Plan ready! Starting implementation..."
             yield AgentEvent(type="agent_message_start")
             yield AgentEvent(
                 type="agent_message_delta",
-                data={"token": "Plan ready! Starting implementation..."},
+                data={"token": status_msg},
             )
             yield AgentEvent(type="agent_message_end")
+            await self._track_assistant_message(status_msg)
 
             self.state.current_phase = Phase.IMPLEMENTATION
             logger.info("[Orchestrator] Phase transition: planning → implementation")
@@ -435,12 +498,14 @@ class OrchestratorSession:
                     return
 
         # All tasks complete — transition to validation
+        status_msg = "All tasks complete! Validating your project..."
         yield AgentEvent(type="agent_message_start")
         yield AgentEvent(
             type="agent_message_delta",
-            data={"token": "All tasks complete! Validating your project..."},
+            data={"token": status_msg},
         )
         yield AgentEvent(type="agent_message_end")
+        await self._track_assistant_message(status_msg)
 
         self.state.current_phase = Phase.VALIDATION
         yield AgentEvent(
@@ -599,12 +664,14 @@ class OrchestratorSession:
     async def _handle_additive(
         self, message: str
     ) -> AsyncGenerator[AgentEvent, None]:
+        status_msg = "Got it! Updating the plan to include your new requirement..."
         yield AgentEvent(type="agent_message_start")
         yield AgentEvent(
             type="agent_message_delta",
-            data={"token": "Got it! Updating the plan to include your new requirement..."},
+            data={"token": status_msg},
         )
         yield AgentEvent(type="agent_message_end")
+        await self._track_assistant_message(status_msg)
 
         if "planning" not in self._agents:
             async for event in self._fallback_to_prototype(message):
@@ -655,14 +722,14 @@ class OrchestratorSession:
     async def _handle_breaking(
         self, message: str
     ) -> AsyncGenerator[AgentEvent, None]:
+        status_msg = "This is a major change. Saving current progress and re-planning..."
         yield AgentEvent(type="agent_message_start")
         yield AgentEvent(
             type="agent_message_delta",
-            data={
-                "token": "This is a major change. Saving current progress and re-planning..."
-            },
+            data={"token": status_msg},
         )
         yield AgentEvent(type="agent_message_end")
+        await self._track_assistant_message(status_msg)
 
         # Safety checkpoint: git commit current state
         from app.agent.tools import execute_tool
@@ -717,6 +784,7 @@ class OrchestratorSession:
             type="agent_message_delta", data={"token": response}
         )
         yield AgentEvent(type="agent_message_end")
+        await self._track_assistant_message(response)
         yield AgentEvent(type="waiting_for_user")
 
     # ── Resume after ask_user ───────────────────────────────────
@@ -746,9 +814,7 @@ class OrchestratorSession:
             if event.type == "agent_message_delta":
                 text_parts.append(event.data.get("token", ""))
             elif event.type == "agent_message_end" and text_parts:
-                self.state.user_conversation.append(
-                    {"role": "assistant", "content": "".join(text_parts)}
-                )
+                await self._track_assistant_message("".join(text_parts))
                 text_parts.clear()
             if event.type == "ask_user":
                 return
@@ -772,12 +838,14 @@ class OrchestratorSession:
 
         if phase == Phase.RESEARCH and result.spec:
             self.state.spec = result.spec
+            status_msg = "Requirements captured! Planning your project structure..."
             yield AgentEvent(type="agent_message_start")
             yield AgentEvent(
                 type="agent_message_delta",
-                data={"token": "Requirements captured! Planning your project structure..."},
+                data={"token": status_msg},
             )
             yield AgentEvent(type="agent_message_end")
+            await self._track_assistant_message(status_msg)
             self.state.current_phase = Phase.PLANNING
             yield AgentEvent(
                 type="phase_transition",
