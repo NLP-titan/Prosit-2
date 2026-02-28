@@ -112,6 +112,7 @@ export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, sh
             );
           }
           if (msg.role === "ask_user") {
+            // Fallback for standalone ask_user messages (not merged into assistant)
             return (
               <AskUserPrompt
                 key={msg.id}
@@ -120,7 +121,13 @@ export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, sh
               />
             );
           }
-          return <ChatMessage key={msg.id} msg={msg} />;
+          return (
+            <ChatMessage
+              key={msg.id}
+              msg={msg}
+              onAnswerAskUser={onAnswerAskUser}
+            />
+          );
         })}
         {showThinking && <ThinkingIndicator />}
         <div ref={bottomRef} />

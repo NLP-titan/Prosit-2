@@ -247,13 +247,34 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "ASK_USER": {
       const msgs = closeActiveToolGroups(state.messages);
-      msgs.push({
-        id: nextId(),
-        role: "ask_user",
-        content: action.question,
-        options: action.options,
-        answered: false,
-      });
+      // Merge into the last assistant message so the question + options
+      // appear as a continuation of the agent's text, not a separate bubble.
+      let merged = false;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === "assistant") {
+          const separator = msgs[i].content ? "\n\n" : "";
+          msgs[i] = {
+            ...msgs[i],
+            content: msgs[i].content + separator + action.question,
+            options: action.options,
+            answered: false,
+          };
+          merged = true;
+          break;
+        }
+        // Stop looking if we hit a user message — don't merge across user turns
+        if (msgs[i].role === "user") break;
+      }
+      if (!merged) {
+        // Fallback: standalone ask_user message (no preceding assistant msg)
+        msgs.push({
+          id: nextId(),
+          role: "ask_user",
+          content: action.question,
+          options: action.options,
+          answered: false,
+        });
+      }
       return { ...state, messages: msgs, isAgentWorking: false };
     }
 
