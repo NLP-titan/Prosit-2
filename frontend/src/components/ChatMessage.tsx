@@ -1,7 +1,7 @@
 "use client";
 
 import { ChatMessage as ChatMessageType } from "@/lib/types";
-import { User, Sparkles } from "lucide-react";
+import { User, Bot } from "lucide-react";
 import clsx from "clsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,52 +15,32 @@ export default function ChatMessage({ msg }: { msg: ChatMessageType }) {
   const isUser = msg.role === "user";
 
   return (
-    <div
-      className={clsx(
-        "px-4 py-3 flex gap-3",
-        isUser ? "justify-end" : "justify-start"
-      )}
-    >
-      {!isUser && (
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-white border border-border text-black">
-          <Sparkles className="w-4 h-4 text-[#0E7A3D]" />
-        </div>
-      )}
+    <div className={clsx("flex items-start gap-3 px-4 py-3", isUser && "bg-bg-secondary/50")}>
       <div
         className={clsx(
-          "max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
-          isUser
-            ? "bg-black text-white rounded-tr-sm"
-            : "bg-white border border-border text-text-primary rounded-tl-sm shadow-sm"
+          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white",
+          isUser ? "bg-blue-600" : "bg-emerald-600"
         )}
       >
-        <div
-          className={clsx(
-            "min-w-0 max-w-none prose prose-sm prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-2 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none",
-            theme === "dark"
-              ? "prose-invert prose-code:text-emerald-300 prose-code:bg-bg-secondary"
-              : "prose-code:text-emerald-700 prose-code:bg-bg-tertiary"
-          )}
-        >
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{msg.content}</p>
-          ) : (
-            <>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {msg.content}
-              </ReactMarkdown>
-              {msg.isStreaming && (
-                <span className="animate-pulse text-emerald-400">|</span>
-              )}
-            </>
-          )}
-        </div>
+        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
       </div>
-      {isUser && (
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-black text-white">
-          <User className="w-4 h-4" />
-        </div>
-      )}
+      <div className={clsx(
+        "min-w-0 max-w-none prose prose-sm prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-2 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none",
+        theme === "dark"
+          ? "prose-invert prose-code:text-emerald-300 prose-code:bg-bg-secondary"
+          : "prose-code:text-emerald-700 prose-code:bg-bg-tertiary"
+      )}>
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        ) : (
+          <>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {msg.content}
+            </ReactMarkdown>
+            {msg.isStreaming && <span className="animate-pulse text-emerald-400">|</span>}
+          </>
+        )}
+      </div>
     </div>
   );
 }

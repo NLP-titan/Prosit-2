@@ -2,30 +2,6 @@ import { Project } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export interface DatabasePreviewField {
-  name: string;
-  typeLabel: string;
-}
-
-export interface DatabasePreviewModel {
-  name: string;
-  description: string;
-  fields: DatabasePreviewField[];
-}
-
-export interface DatabasePreviewResponse {
-  models: DatabasePreviewModel[];
-}
-
-export interface CapabilitiesPreviewGroup {
-  name: string;
-  items: string[];
-}
-
-export interface CapabilitiesPreviewResponse {
-  groups: CapabilitiesPreviewGroup[];
-}
-
 export async function createProject(name: string, description: string): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects`, {
     method: "POST",
@@ -69,29 +45,6 @@ export async function getChatHistory(projectId: string): Promise<Array<{ role: s
   const res = await fetch(`${API_BASE}/projects/${projectId}/chat/history`);
   if (!res.ok) throw new Error("Failed to get chat history");
   return res.json();
-}
-
-export async function getDatabasePreview(projectId: string): Promise<DatabasePreviewResponse> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/preview/database`);
-  if (!res.ok) {
-    throw new Error("Failed to get database preview");
-  }
-  return res.json();
-}
-
-export async function getCapabilitiesPreview(projectId: string): Promise<CapabilitiesPreviewResponse> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/preview/capabilities`);
-  if (!res.ok) {
-    throw new Error("Failed to get capabilities preview");
-  }
-  return res.json();
-}
-
-export async function stopProject(projectId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/stop`, { method: "POST" });
-  if (!res.ok) {
-    throw new Error("Failed to stop project");
-  }
 }
 
 export function getWsUrl(projectId: string): string {

@@ -20,24 +20,24 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
   const [tab, setTab] = useState<Tab>("status");
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "status", label: "Overview" },
+    { id: "status", label: "Status" },
     { id: "files", label: "Files" },
-    { id: "git", label: "Changes" },
+    { id: "git", label: "Git" },
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="border-b border-border bg-[#FAFAFA]">
-        <div className="flex px-2 py-1.5 gap-1">
+    <div className="flex flex-col h-full">
+      <div className="border-b border-zinc-700">
+        <div className="flex">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={clsx(
-                "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
+                "px-4 py-2.5 text-sm transition-colors",
                 tab === t.id
-                  ? "bg-black text-white"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
+                  ? "text-white border-b-2 border-blue-500"
+                  : "text-zinc-400 hover:text-white"
               )}
             >
               {t.label}
@@ -48,23 +48,20 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
 
       <div className="flex-1 overflow-y-auto">
         {tab === "status" && (
-          <div className="p-4 space-y-4 text-sm">
+          <div className="p-4 space-y-4">
             <div>
-              <div className="text-[11px] text-text-muted uppercase tracking-[0.16em] mb-1">
-                Deployment state
-              </div>
+              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">State</div>
               <div className="text-sm font-mono">
                 <span
                   className={clsx(
-                    "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px]",
+                    "inline-block px-2 py-0.5 rounded text-xs",
                     projectState === "running"
-                      ? "bg-[#D4F79A] text-black"
+                      ? "bg-emerald-900 text-emerald-300"
                       : projectState === "error"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-bg-secondary text-text-secondary"
+                        ? "bg-red-900 text-red-300"
+                        : "bg-zinc-800 text-zinc-300"
                   )}
                 >
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
                   {projectState}
                 </span>
               </div>
@@ -72,14 +69,14 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
 
             {swaggerUrl && (
               <div>
-                <div className="text-[11px] text-text-muted uppercase tracking-[0.16em] mb-1">
-                  Interactive docs
+                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                  Swagger UI
                 </div>
                 <a
                   href={swaggerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-accent hover:opacity-80 underline break-all"
+                  className="text-blue-400 hover:text-blue-300 text-sm underline"
                 >
                   {swaggerUrl}
                 </a>
@@ -88,33 +85,19 @@ export default function StatusPanel({ projectState, files, commits, swaggerUrl, 
 
             {apiUrl && (
               <div>
-                <div className="text-[11px] text-text-muted uppercase tracking-[0.16em] mb-1">
-                  API base URL
+                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                  API URL
                 </div>
                 <a
                   href={apiUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-accent hover:opacity-80 underline break-all"
+                  className="text-blue-400 hover:text-blue-300 text-sm underline"
                 >
                   {apiUrl}
                 </a>
               </div>
             )}
-
-            <div className="text-xs text-text-secondary bg-bg-secondary/60 rounded-2xl px-3 py-2.5 space-y-1">
-              <p className="font-medium text-text-primary">
-                What this means
-              </p>
-              <p>
-                When the state is <span className="font-mono">running</span>,
-                your backend is live and ready for your frontend to call.
-              </p>
-              <p>
-                Use the links above to explore your API in the browser or from
-                tools like Postman, curl, or your own app.
-              </p>
-            </div>
           </div>
         )}
 

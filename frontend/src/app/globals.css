@@ -3,16 +3,16 @@
 @source "./projects/*/page.tsx";
 
 :root {
-  /* Light mode defaults - Mesora-inspired */
+  /* Light mode defaults */
   --bg-primary: #ffffff;
-  --bg-secondary: #f4f4f5;    /* soft gray, used for shells */
-  --bg-tertiary: #e4e4e7;
+  --bg-secondary: #f4f4f5;    /* zinc-100 */
+  --bg-tertiary: #e4e4e7;     /* zinc-200 */
   --bg-hover: #e4e4e7;
-  --text-primary: #111111;
-  --text-secondary: #52525b;
-  --text-muted: #a1a1aa;
-  --border-color: #e4e4e7;
-  --accent: #0e7a3d;          /* Mesora green */
+  --text-primary: #18181b;     /* zinc-900 */
+  --text-secondary: #52525b;   /* zinc-600 */
+  --text-muted: #a1a1aa;       /* zinc-400 */
+  --border-color: #d4d4d8;     /* zinc-300 */
+  --accent: #3b82f6;           /* blue-500 */
 }
 
 .dark {
@@ -44,26 +44,6 @@
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
-}
-
-::selection {
-  background: #d4f79a;
-  color: #000000;
-}
-
-.page-shell {
-  max-width: 80rem; /* ~1280px */
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-@media (min-width: 640px) {
-  .page-shell {
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
-  }
 }
 
 /* Allotment sash (resize handle) styling */

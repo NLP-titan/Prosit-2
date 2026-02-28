@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { X } from "lucide-react";
-import { Button } from "./ui/Button";
 
 interface Props {
   open: boolean;
@@ -47,7 +46,7 @@ export default function NewProjectDialog({ open, onClose, onCreate }: Props) {
         onKeyDown={handleKeyDown}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Create a new backend</h2>
+          <h2 className="text-lg font-semibold">New Project</h2>
           <button onClick={onClose} className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-bg-secondary">
             <X className="w-4 h-4" />
           </button>
@@ -55,17 +54,17 @@ export default function NewProjectDialog({ open, onClose, onCreate }: Props) {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-text-secondary mb-1">Give your backend a name</label>
+            <label className="block text-sm text-text-secondary mb-1">Name</label>
             <input
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Customer onboarding service"
+              placeholder="My API Project"
               className="w-full bg-bg-secondary border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">What should this backend help you do? (optional)</label>
+            <label className="block text-sm text-text-secondary mb-1">Description (optional)</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -77,22 +76,18 @@ export default function NewProjectDialog({ open, onClose, onCreate }: Props) {
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
+          <button
             onClick={onClose}
+            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded hover:bg-bg-secondary transition-colors"
           >
             Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
+          </button>
+          <button
             onClick={handleCreate}
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 rounded transition-colors text-white"
           >
-            Start building
-          </Button>
+            Create
+          </button>
         </div>
       </div>
     </div>
