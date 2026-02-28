@@ -54,6 +54,14 @@ async def chat_ws(ws: WebSocket, project_id: str):
             async for event in session.handle_user_message(user_message):
                 await _send(ws, event.type, event.data)
 
+                # Persist build_summary so it restores in correct position
+                if event.type == "build_complete":
+                    await _persist_build_summary(
+                        project_id,
+                        event.data.get("swagger_url", ""),
+                        event.data.get("api_url", ""),
+                    )
+
                 # After tool calls that modify files, send file tree and git updates
                 if event.type == "tool_call_result":
                     tool = event.data.get("tool")
@@ -133,6 +141,30 @@ async def _send_sidebar_updates(ws: WebSocket, session: OrchestratorSession):
         await _send(ws, "git_update", {"commits": log})
 
 
+async def _persist_build_summary(
+    project_id: str, swagger_url: str, api_url: str
+) -> None:
+    """Save a build_summary marker in chat_messages so it restores in position."""
+    from datetime import datetime, timezone
+
+    db = await get_db()
+    try:
+        await db.execute(
+            """INSERT INTO chat_messages
+               (project_id, role, content, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (
+                project_id,
+                "build_summary",
+                json.dumps({"swagger_url": swagger_url, "api_url": api_url}),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
 @router.get("/projects/{project_id}/chat/history")
 async def get_chat_history(project_id: str):
     """Return chat messages formatted for frontend display."""
@@ -159,5 +191,13 @@ async def get_chat_history(project_id: str):
             messages.append({"role": "user", "content": content})
         elif role == "assistant":
             messages.append({"role": "assistant", "content": content or ""})
+        elif role == "build_summary":
+            data = json.loads(content) if content else {}
+            messages.append({
+                "role": "build_summary",
+                "content": "",
+                "swagger_url": data.get("swagger_url", ""),
+                "api_url": data.get("api_url", ""),
+            })
         # tool roles are internal, skip for frontend display
     return messages

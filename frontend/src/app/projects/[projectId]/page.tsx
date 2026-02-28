@@ -69,13 +69,31 @@ export default function WorkspacePage() {
         ]);
         dispatch({ type: "SET_FILES", files });
         if (history.length > 0) {
-          dispatch({
-            type: "SET_MESSAGES",
-            messages: history.map((m, i) => ({
+          const msgs = history.map((m, i) => {
+            if (m.role === "build_summary") {
+              return {
+                id: `hist-${i}`,
+                role: "build_summary" as const,
+                content: "",
+                swaggerUrl: m.swagger_url || "",
+                apiUrl: m.api_url || "",
+              };
+            }
+            return {
               id: `hist-${i}`,
               role: m.role as "user" | "assistant",
               content: m.content,
-            })),
+            };
+          });
+          dispatch({ type: "SET_MESSAGES", messages: msgs });
+        }
+        // Restore swagger/api URLs in app state if project was previously deployed
+        if (project.swagger_url) {
+          dispatch({
+            type: "STATE_UPDATE",
+            state: project.state,
+            swaggerUrl: project.swagger_url,
+            apiUrl: project.api_url || "",
           });
         }
       } catch (e) {
