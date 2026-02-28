@@ -1,4 +1,4 @@
-import { AppState, ChatMessage, GitCommit, ToolGroup } from "./types";
+import { AppState, BuildTask, ChatMessage, GitCommit, ToolGroup } from "./types";
 
 export type AppAction =
   | { type: "SET_PROJECT"; project: AppState["project"] }
@@ -18,8 +18,10 @@ export type AppAction =
   | { type: "STATE_UPDATE"; state: string; swaggerUrl: string; apiUrl: string }
   | { type: "SELECT_FILE"; path: string | null }
   | { type: "ASK_USER"; question: string; options: string[] }
-  | { type: "MARK_ANSWERED"; messageId: string }
-  | { type: "SET_MESSAGES"; messages: ChatMessage[] };
+  | { type: "SET_MESSAGES"; messages: ChatMessage[] }
+  | { type: "TASK_START"; taskId: string; description: string }
+  | { type: "TASK_COMPLETE"; taskId: string }
+  | { type: "PHASE_TRANSITION"; from: string; to: string };
 
 let msgCounter = 0;
 function nextId() {
@@ -88,6 +90,21 @@ function getOrCreateActiveToolGroup(messages: ChatMessage[]): { msgs: ChatMessag
   return { msgs, group, index: msgs.length - 1 };
 }
 
+function findBuildProgress(messages: ChatMessage[]): { index: number; msg: ChatMessage } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "build_progress") {
+      return { index: i, msg: messages[i] };
+    }
+  }
+  return null;
+}
+
+function isBuildActive(messages: ChatMessage[]): boolean {
+  const bp = findBuildProgress(messages);
+  if (!bp) return false;
+  return bp.msg.buildTasks?.some((t) => t.status === "running") ?? false;
+}
+
 function closeActiveToolGroups(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((m) =>
     m.role === "tool_group" && m.toolGroup?.isActive
@@ -112,6 +129,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case "START_ASSISTANT_MESSAGE": {
+      if (isBuildActive(state.messages)) return state;
       const msgs = closeActiveToolGroups(state.messages);
       return {
         ...state,
@@ -123,6 +141,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "APPEND_ASSISTANT_TOKEN": {
+      if (isBuildActive(state.messages)) return state;
       const msgs = [...state.messages];
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant" && last.isStreaming) {
@@ -132,6 +151,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "END_ASSISTANT_MESSAGE": {
+      if (isBuildActive(state.messages)) return state;
       const msgs = [...state.messages];
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant") {
@@ -141,6 +161,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "ADD_TOOL_CALL": {
+      const bp = findBuildProgress(state.messages);
+      if (bp && isBuildActive(state.messages)) {
+        const msgs = [...state.messages];
+        const summary = getToolSummary(action.tool, action.args);
+        msgs[bp.index] = { ...bp.msg, currentAction: summary };
+        return { ...state, messages: msgs };
+      }
       const { msgs, group, index } = getOrCreateActiveToolGroup(state.messages);
       const updatedGroup = {
         ...group,
@@ -152,6 +179,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "ADD_TOOL_RESULT": {
+      const bp = findBuildProgress(state.messages);
+      if (bp && isBuildActive(state.messages)) {
+        const msgs = [...state.messages];
+        // Still auto-select file
+        let autoSelectFile: string | null = null;
+        if (action.tool === "write_file" || action.tool === "edit_file") {
+          // We don't have args here, but the currentAction has the path info
+          // Auto-select is handled by the tool_call_start args
+        }
+        // Update currentAction to show completion
+        const runningTask = bp.msg.buildTasks?.find((t) => t.status === "running");
+        const summary = runningTask ? runningTask.description : bp.msg.currentAction || "";
+        msgs[bp.index] = { ...bp.msg, currentAction: summary };
+        return { ...state, messages: msgs };
+      }
       const msgs = [...state.messages];
       let autoSelectFile: string | null = null;
       // Find the active tool group and update the matching step
@@ -247,8 +289,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "ASK_USER": {
       const msgs = closeActiveToolGroups(state.messages);
-      // Merge into the last assistant message so the question + options
-      // appear as a continuation of the agent's text, not a separate bubble.
+      // Merge the ask_user question into the last assistant message so it
+      // reads as one continuous response instead of a separate bubble.
+      // Options are NOT rendered — the user simply types their answer.
       let merged = false;
       for (let i = msgs.length - 1; i >= 0; i--) {
         if (msgs[i].role === "assistant") {
@@ -256,8 +299,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           msgs[i] = {
             ...msgs[i],
             content: msgs[i].content + separator + action.question,
-            options: action.options,
-            answered: false,
           };
           merged = true;
           break;
@@ -266,27 +307,91 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         if (msgs[i].role === "user") break;
       }
       if (!merged) {
-        // Fallback: standalone ask_user message (no preceding assistant msg)
+        // Fallback: standalone message when there's no preceding assistant msg
         msgs.push({
           id: nextId(),
-          role: "ask_user",
+          role: "assistant",
           content: action.question,
-          options: action.options,
-          answered: false,
         });
       }
       return { ...state, messages: msgs, isAgentWorking: false };
     }
 
-    case "MARK_ANSWERED": {
-      const msgs = state.messages.map((m) =>
-        m.id === action.messageId ? { ...m, answered: true } : m
-      );
+    case "SET_MESSAGES":
+      return { ...state, messages: action.messages };
+
+    case "TASK_START": {
+      const msgs = [...state.messages];
+      let bp = findBuildProgress(msgs);
+      if (!bp) {
+        const newMsg: ChatMessage = {
+          id: nextId(),
+          role: "build_progress",
+          content: "",
+          buildTasks: [],
+          currentAction: "",
+        };
+        msgs.push(newMsg);
+        bp = { index: msgs.length - 1, msg: newMsg };
+      }
+      const tasks: BuildTask[] = [...(bp.msg.buildTasks || [])];
+      // Mark any previously running tasks as still running (only one should be)
+      const newTask: BuildTask = {
+        id: action.taskId,
+        description: action.description,
+        status: "running",
+      };
+      tasks.push(newTask);
+      msgs[bp.index] = {
+        ...bp.msg,
+        buildTasks: tasks,
+        currentAction: action.description,
+      };
       return { ...state, messages: msgs };
     }
 
-    case "SET_MESSAGES":
-      return { ...state, messages: action.messages };
+    case "TASK_COMPLETE": {
+      const msgs = [...state.messages];
+      const bp = findBuildProgress(msgs);
+      if (!bp) return state;
+      const tasks = (bp.msg.buildTasks || []).map((t) =>
+        t.id === action.taskId ? { ...t, status: "complete" as const } : t
+      );
+      const nextRunning = tasks.find((t) => t.status === "running");
+      msgs[bp.index] = {
+        ...bp.msg,
+        buildTasks: tasks,
+        currentAction: nextRunning?.description || "",
+      };
+      return { ...state, messages: msgs };
+    }
+
+    case "PHASE_TRANSITION": {
+      const msgs = [...state.messages];
+      if (action.to === "implementation") {
+        const bp = findBuildProgress(msgs);
+        if (!bp) {
+          msgs.push({
+            id: nextId(),
+            role: "build_progress",
+            content: "",
+            buildTasks: [],
+            currentAction: "",
+          });
+        }
+      }
+      if (action.to === "complete") {
+        const bp = findBuildProgress(msgs);
+        if (bp) {
+          const tasks = (bp.msg.buildTasks || []).map((t) => ({
+            ...t,
+            status: "complete" as const,
+          }));
+          msgs[bp.index] = { ...bp.msg, buildTasks: tasks, currentAction: "" };
+        }
+      }
+      return { ...state, messages: msgs };
+    }
 
     default:
       return state;

@@ -77,6 +77,23 @@ export function useWebSocket(
             options: msg.options || [],
           });
           break;
+        case "task_start":
+          dispatch({
+            type: "TASK_START",
+            taskId: msg.task_id || "",
+            description: msg.description || "",
+          });
+          break;
+        case "task_complete":
+          dispatch({ type: "TASK_COMPLETE", taskId: msg.task_id || "" });
+          break;
+        case "phase_transition":
+          dispatch({
+            type: "PHASE_TRANSITION",
+            from: msg.from || "",
+            to: msg.to || "",
+          });
+          break;
         case "error":
           dispatch({ type: "ADD_ERROR", message: msg.message || "Unknown error" });
           break;

@@ -6,7 +6,7 @@ import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
 import ToolActivity from "./ToolActivity";
 import BuildSummary from "./BuildSummary";
-import AskUserPrompt from "./AskUserPrompt";
+import BuildProgress from "./BuildProgress";
 import ThinkingIndicator from "./ThinkingIndicator";
 import { Button } from "./ui/Button";
 
@@ -16,10 +16,9 @@ interface Props {
   onStop: () => void;
   isAgentWorking: boolean;
   showToolDetails: boolean;
-  onAnswerAskUser?: (messageId: string, answer: string) => void;
 }
 
-export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, showToolDetails, onAnswerAskUser }: Props) {
+export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, showToolDetails }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,7 +29,10 @@ export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, sh
   const lastMsg = messages[messages.length - 1];
   const hasActiveToolGroup = lastMsg?.role === "tool_group" && lastMsg.toolGroup?.isActive;
   const isStreaming = lastMsg?.role === "assistant" && lastMsg.isStreaming;
-  const showThinking = isAgentWorking && !hasActiveToolGroup && !isStreaming;
+  const hasBuildProgress = messages.some(
+    (m) => m.role === "build_progress" && m.buildTasks?.some((t) => t.status === "running")
+  );
+  const showThinking = isAgentWorking && !hasActiveToolGroup && !isStreaming && !hasBuildProgress;
 
   const handlePreset = (text: string) => {
     if (isAgentWorking) return;
@@ -102,6 +104,9 @@ export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, sh
               />
             );
           }
+          if (msg.role === "build_progress") {
+            return <BuildProgress key={msg.id} msg={msg} />;
+          }
           if (msg.role === "build_summary") {
             return (
               <BuildSummary
@@ -111,23 +116,7 @@ export default function ChatPanel({ messages, onSend, onStop, isAgentWorking, sh
               />
             );
           }
-          if (msg.role === "ask_user") {
-            // Fallback for standalone ask_user messages (not merged into assistant)
-            return (
-              <AskUserPrompt
-                key={msg.id}
-                msg={msg}
-                onAnswer={(answer) => onAnswerAskUser?.(msg.id, answer)}
-              />
-            );
-          }
-          return (
-            <ChatMessage
-              key={msg.id}
-              msg={msg}
-              onAnswerAskUser={onAnswerAskUser}
-            />
-          );
+          return <ChatMessage key={msg.id} msg={msg} />;
         })}
         {showThinking && <ThinkingIndicator />}
         <div ref={bottomRef} />

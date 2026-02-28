@@ -12,6 +12,9 @@ export type WSMessageType =
   | "stopped"
   | "state_update"
   | "ask_user"
+  | "task_start"
+  | "task_complete"
+  | "phase_transition"
   | "error";
 
 export interface WSMessage {
@@ -36,6 +39,12 @@ export interface WSMessage {
   // ask_user
   question?: string;
   options?: string[];
+  // task_start / task_complete
+  task_id?: string;
+  description?: string;
+  // phase_transition
+  from?: string;
+  to?: string;
 }
 
 export interface ToolStep {
@@ -51,9 +60,15 @@ export interface ToolGroup {
   isActive: boolean;
 }
 
+export interface BuildTask {
+  id: string;
+  description: string;
+  status: "pending" | "running" | "complete" | "error";
+}
+
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_group" | "build_summary" | "ask_user";
+  role: "user" | "assistant" | "tool_group" | "build_summary" | "ask_user" | "build_progress";
   content: string;
   toolGroup?: ToolGroup;
   isStreaming?: boolean;
@@ -62,6 +77,9 @@ export interface ChatMessage {
   // ask_user
   options?: string[];
   answered?: boolean;
+  // build_progress
+  buildTasks?: BuildTask[];
+  currentAction?: string;
 }
 
 export interface GitCommit {

@@ -46,11 +46,11 @@ export default function WorkspaceProgressView({
   const statuses = computeStatuses(projectState, isAgentWorking);
 
   return (
-    <div className="bg-white border border-border rounded-[24px] p-6 md:p-8 max-w-xl">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+    <div className="bg-bg-primary border border-border rounded-[24px] p-6 md:p-8 max-w-xl">
+      <h3 className="text-lg font-semibold text-text-primary mb-1">
         Deployment Status
       </h3>
-      <p className="text-xs text-gray-500 mb-6">
+      <p className="text-xs text-text-muted mb-6">
         Track the agent&apos;s progress as it builds your infrastructure.
       </p>
 
@@ -62,21 +62,21 @@ export default function WorkspaceProgressView({
             <div key={label} className="relative flex gap-4">
               {/* vertical line */}
               {!isLast && (
-                <div className="absolute left-4 top-7 bottom-[-20px] w-px bg-gray-100" />
+                <div className="absolute left-4 top-7 bottom-[-20px] w-px bg-border" />
               )}
               {/* icon */}
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 z-10 border-2 ${
                   status === "complete"
-                    ? "bg-[#D4F79A] border-[#D4F79A] text-black"
+                    ? "bg-accent/20 border-accent text-accent"
                     : status === "loading"
-                    ? "bg-white border-black text-black"
-                    : "bg-gray-50 border-gray-200 text-gray-300"
+                    ? "bg-bg-primary border-text-primary text-text-primary"
+                    : "bg-bg-secondary border-border text-text-muted"
                 }`}
               >
                 {status === "complete" && <Check className="w-4 h-4" />}
                 {status === "loading" && (
-                  <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 border-t-black animate-spin" />
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-border border-t-text-primary animate-spin" />
                 )}
                 {status === "pending" && <Clock className="w-4 h-4" />}
               </div>
@@ -84,13 +84,13 @@ export default function WorkspaceProgressView({
               <div className="pt-1">
                 <p
                   className={`text-sm font-medium ${
-                    status === "pending" ? "text-gray-400" : "text-gray-900"
+                    status === "pending" ? "text-text-muted" : "text-text-primary"
                   }`}
                 >
                   {label}
                 </p>
                 {status === "loading" && (
-                  <p className="text-[11px] text-gray-500 mt-1">
+                  <p className="text-[11px] text-text-muted mt-1">
                     This step may take a few seconds…
                   </p>
                 )}
