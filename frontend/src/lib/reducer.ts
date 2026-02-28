@@ -162,6 +162,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "ADD_TOOL_CALL": {
       const bp = findBuildProgress(state.messages);
+      console.log("[Reducer] ADD_TOOL_CALL:", action.tool, "buildActive:", isBuildActive(state.messages), "hasBP:", !!bp);
       if (bp && isBuildActive(state.messages)) {
         const msgs = [...state.messages];
         const summary = getToolSummary(action.tool, action.args);
@@ -321,6 +322,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, messages: action.messages };
 
     case "TASK_START": {
+      console.log("[Reducer] TASK_START:", action.taskId, action.description);
       const msgs = [...state.messages];
       let bp = findBuildProgress(msgs);
       if (!bp) {
@@ -367,6 +369,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "PHASE_TRANSITION": {
+      console.log("[Reducer] PHASE_TRANSITION:", action.from, "→", action.to);
       const msgs = [...state.messages];
       if (action.to === "implementation") {
         const bp = findBuildProgress(msgs);
