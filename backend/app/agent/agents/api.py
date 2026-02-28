@@ -32,8 +32,14 @@ class APIAgent(BaseAgent):
         project: Project,
         task: Task | None = None,
         user_message: str | None = None,
+        shared_context: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         messages = [{"role": "system", "content": self.system_prompt}]
+
+        if shared_context:
+            messages.append({"role": "user", "content": shared_context})
+            messages.append({"role": "assistant", "content":
+                "I've reviewed the project structure and existing code. Ready to proceed."})
 
         content = self._build_task_instruction(task, user_message)
         messages.append({"role": "user", "content": content})
@@ -75,14 +81,15 @@ class APIAgent(BaseAgent):
 
         parts.append(
             "### Steps\n"
-            "1. List the project directory to understand the structure\n"
-            f"2. Read the {entity_name} model file to understand exact column definitions\n"
-            "3. Read the existing app structure (main.py, existing routers)\n"
-            f"4. Create Pydantic schemas in app/schemas/{entity_name.lower()}.py\n"
-            f"5. Create the service layer in app/services/{entity_name.lower()}.py\n"
-            f"6. Create the FastAPI router in app/routers/{entity_name.lower()}.py\n"
-            "7. Register the router in the main app file\n"
-            f'8. Commit with message "Add {entity_name} API (schemas, service, router)"\n'
+            f"1. Read the {entity_name} model file (app/models/{entity_name.lower()}.py)\n"
+            f"2. Create Pydantic schemas in app/schemas/{entity_name.lower()}.py\n"
+            f"3. Create the service layer in app/services/{entity_name.lower()}.py\n"
+            f"4. Create the FastAPI router in app/routers/{entity_name.lower()}.py\n"
+            "5. Register the router in app/main.py\n"
+            f'6. Commit with message "Add {entity_name} API (schemas, service, router)"\n\n'
+            "NOTE: The project structure and key files (database.py, main.py) have already been "
+            "provided. Do NOT call list_directory or read_file for these — only read the entity "
+            "model file and any other files not already provided.\n"
         )
 
         return "\n".join(parts)

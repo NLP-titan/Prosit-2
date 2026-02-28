@@ -42,6 +42,7 @@ class ClarificationAgent(BaseAgent):
         project: Project,
         task: None = None,
         user_message: str | None = None,
+        shared_context: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Run the clarification loop: update spec, check completeness, ask follow-ups, then finalize on confirmation."""
         logger.info("[ClarificationAgent] run() started, building messages and calling OpenRouter...")

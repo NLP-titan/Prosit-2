@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -16,7 +17,8 @@ from app.agent.state import (
     TaskManifest,
 )
 from app.db import get_db
-from app.models.project import Project
+from app.models.project import Project, ProjectState
+from app.services import project as project_svc
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ class OrchestratorSession:
         self._agents: dict[str, BaseAgent] = {}
         self._active_agent: BaseAgent | None = None
         self._current_task: Task | None = None
+        self._shared_context: str | None = None
         self._fallback_session = None
         self._file_handler: logging.FileHandler | None = None
         self._setup_project_log()
@@ -174,6 +177,21 @@ class OrchestratorSession:
                 "[Orchestrator] Restored %d conversation messages",
                 len(self.state.user_conversation),
             )
+
+    # ── Project state helper ────────────────────────────────────
+
+    async def _set_project_state(self, new_state: ProjectState) -> AgentEvent:
+        """Update the project state in DB and return a state_update event for the frontend."""
+        self.project.state = new_state
+        await project_svc.update_project(self.project)
+        return AgentEvent(
+            type="state_update",
+            data={
+                "state": new_state.value,
+                "swagger_url": self.project.swagger_url or "",
+                "api_url": self.project.api_url or "",
+            },
+        )
 
     # ── State persistence ───────────────────────────────────────
 
@@ -391,6 +409,7 @@ class OrchestratorSession:
 
             self.state.current_phase = Phase.IMPLEMENTATION
             logger.info("[Orchestrator] Phase transition: planning → implementation")
+            yield await self._set_project_state(ProjectState.GENERATING)
             yield AgentEvent(
                 type="phase_transition",
                 data={"from": "planning", "to": "implementation"},
@@ -402,6 +421,34 @@ class OrchestratorSession:
                 yield event
 
     # ── Implementation phase ────────────────────────────────────
+
+    async def _build_shared_context(self) -> str:
+        """Pre-read common project files to inject into agent messages."""
+        project_dir = self.project.directory
+        parts: list[str] = []
+
+        # Directory listing
+        if project_dir.exists():
+            entries = []
+            for f in sorted(project_dir.rglob("*")):
+                if f.is_file() and ".git" not in f.parts and "__pycache__" not in f.parts:
+                    entries.append(str(f.relative_to(project_dir)))
+            parts.append(f"## Project Structure\n```\n" + "\n".join(entries) + "\n```")
+
+        # Key files
+        for rel_path, label in [
+            ("app/database.py", "Database setup (Base class, session)"),
+            ("app/main.py", "Main application file"),
+            ("app/models/__init__.py", "Models init"),
+        ]:
+            full_path = project_dir / rel_path
+            if full_path.exists():
+                content = full_path.read_text()
+                parts.append(f"## {label} (`{rel_path}`)\n```python\n{content}\n```")
+
+        ctx = "\n\n".join(parts)
+        logger.info("[Orchestrator] Built shared context: %d chars", len(ctx))
+        return ctx
 
     async def _run_implementation(self) -> AsyncGenerator[AgentEvent, None]:
         if self.state.manifest is None:
@@ -418,116 +465,64 @@ class OrchestratorSession:
                 )
                 return
 
-            task = self.state.manifest.get_next_task()
-            if task is None:
+            # Get all runnable tasks (excluding docker_up)
+            runnable = [
+                t for t in self.state.manifest.get_runnable_tasks()
+                if t.type != "docker_up"
+            ]
+
+            if not runnable:
                 if self.state.manifest.all_complete():
                     break
-                # Check if only docker_up tasks remain — treat as "code done"
-                remaining = [
+                # Check if only docker_up tasks remain
+                pending_non_docker = [
                     t for t in self.state.manifest.tasks
-                    if t.status == "pending" and t.type == "docker_up"
+                    if t.status == "pending" and t.type != "docker_up"
                 ]
-                all_non_docker_done = remaining and all(
-                    t.status in ("completed", "pending")
-                    for t in self.state.manifest.tasks
-                ) and all(
-                    t.type == "docker_up"
-                    for t in self.state.manifest.tasks
-                    if t.status == "pending"
-                )
-                if all_non_docker_done:
+                if not pending_non_docker:
                     break  # Code is done, deployment waits for user
-                # No runnable task but not all complete — stuck
+                # Check for stuck tasks (failed, not retryable)
+                stuck = [
+                    t for t in self.state.manifest.tasks
+                    if t.status == "failed" and t.retries >= 3
+                ]
+                if stuck:
+                    yield AgentEvent(
+                        type="error",
+                        data={"message": "No runnable tasks available (possible dependency deadlock)"},
+                    )
+                    return
+                # Tasks still running or have unmet deps — shouldn't happen in sequential flow
                 yield AgentEvent(
                     type="error",
                     data={"message": "No runnable tasks available (possible dependency deadlock)"},
                 )
                 return
 
-            # Skip docker_up tasks — deployment is user-triggered
-            if task.type == "docker_up":
-                break
-
-            self._current_task = task
-            task.status = "running"
-            logger.info(
-                "[Orchestrator] Task dispatch: id=%s  agent=%s  desc=%s",
-                task.id, task.agent, task.description[:100],
-            )
-
-            yield AgentEvent(
-                type="task_start",
-                data={
-                    "task_id": task.id,
-                    "description": task.description,
-                    "task_type": task.type,
-                },
-            )
-
-            # Dispatch to the named agent
-            agent_name = task.agent
-            if agent_name not in self._agents:
-                # Fallback: use the prototype for this task
-                async for event in self._fallback_to_prototype(""):
+            if len(runnable) == 1:
+                # Single task — run directly (simpler, no queue overhead)
+                task = runnable[0]
+                async for event in self._run_single_task(task):
+                    if event.type == "ask_user":
+                        yield event
+                        return
                     yield event
+
+                # After scaffold, build shared context
+                if task.type == "scaffold" and task.status == "completed":
+                    self._shared_context = await self._build_shared_context()
+            else:
+                # Multiple independent tasks — run in parallel
+                async for event in self._run_parallel_tasks(runnable):
+                    yield event
+
+            # Check if we hit an unrecoverable error
+            fatal = any(
+                t.status == "failed" and t.retries >= 3
+                for t in self.state.manifest.tasks
+            )
+            if fatal:
                 return
-
-            agent = self._agents[agent_name]
-            self._active_agent = agent
-
-            async for event in agent.run(
-                state=self.state,
-                project=self.project,
-                task=task,
-            ):
-                yield event
-                if event.type == "ask_user":
-                    return  # Paused
-                if event.type == "build_complete":
-                    self.state.manifest.mark_complete(task.id)
-                    await self.save_state()
-                    return
-
-            result = await agent.get_result()
-            self._active_agent = None
-
-            if result.status == "success":
-                logger.info("[Orchestrator] Task %s completed successfully", task.id)
-                self.state.manifest.mark_complete(task.id)
-                if result.files_modified:
-                    self.state.files_created.extend(result.files_modified)
-                yield AgentEvent(
-                    type="task_complete",
-                    data={"task_id": task.id},
-                )
-                await self.save_state()
-            elif result.status == "error":
-                logger.warning("[Orchestrator] Task %s failed: %s", task.id, result.error)
-                self.state.manifest.mark_failed(task.id, result.error or "Unknown error")
-                if task.retries < 3:
-                    self.state.manifest.reset_for_retry(task.id)
-                    logger.warning(
-                        f"Task {task.id} failed (attempt {task.retries}), retrying"
-                    )
-                else:
-                    self.state.errors.append(
-                        AgentError(
-                            agent=agent_name,
-                            task_id=task.id,
-                            message=result.error or "Unknown error",
-                        )
-                    )
-                    yield AgentEvent(
-                        type="error",
-                        data={
-                            "message": (
-                                "Something went wrong while building your project. "
-                                "You can try clicking **Deploy** to retry, or adjust your requirements."
-                            )
-                        },
-                    )
-                    await self.save_state()
-                    return
 
         # All code tasks complete — wait for user to trigger deployment
         status_msg = (
@@ -552,6 +547,169 @@ class OrchestratorSession:
 
         yield AgentEvent(type="waiting_for_user")
 
+    async def _run_single_task(self, task: Task) -> AsyncGenerator[AgentEvent, None]:
+        """Run a single task sequentially."""
+        self._current_task = task
+        task.status = "running"
+        logger.info(
+            "[Orchestrator] Task dispatch: id=%s  agent=%s  desc=%s",
+            task.id, task.agent, task.description[:100],
+        )
+
+        yield AgentEvent(
+            type="task_start",
+            data={
+                "task_id": task.id,
+                "description": task.description,
+                "task_type": task.type,
+            },
+        )
+
+        agent_name = task.agent
+        if agent_name not in self._agents:
+            async for event in self._fallback_to_prototype(""):
+                yield event
+            return
+
+        agent = self._agents[agent_name]
+        self._active_agent = agent
+
+        async for event in agent.run(
+            state=self.state,
+            project=self.project,
+            task=task,
+            shared_context=self._shared_context,
+        ):
+            yield event
+            if event.type == "ask_user":
+                return  # Paused
+            if event.type == "build_complete":
+                self.state.manifest.mark_complete(task.id)
+                await self.save_state()
+                return
+
+        result = await agent.get_result()
+        self._active_agent = None
+        await self._handle_task_result(task, result)
+
+        if result.status == "success":
+            yield AgentEvent(type="task_complete", data={"task_id": task.id})
+        elif result.status == "error" and task.retries >= 3:
+            yield AgentEvent(
+                type="error",
+                data={
+                    "message": (
+                        "Something went wrong while building your project. "
+                        "You can try clicking **Deploy** to retry, or adjust your requirements."
+                    )
+                },
+            )
+
+    async def _run_parallel_tasks(self, tasks: list[Task]) -> AsyncGenerator[AgentEvent, None]:
+        """Run multiple independent tasks concurrently using asyncio.Queue."""
+        queue: asyncio.Queue[tuple[str, str, AgentEvent | AgentResult]] = asyncio.Queue()
+        file_lock = asyncio.Lock()
+
+        logger.info(
+            "[Orchestrator] Parallel dispatch: %d tasks [%s]",
+            len(tasks),
+            ", ".join(f"{t.id}({t.agent})" for t in tasks),
+        )
+
+        async def worker(task: Task) -> None:
+            # Create FRESH agent instance so per-run state is isolated
+            agent_cls = type(self._agents[task.agent])
+            agent = agent_cls()
+            agent._file_lock = file_lock
+            try:
+                async for event in agent.run(
+                    state=self.state,
+                    project=self.project,
+                    task=task,
+                    shared_context=self._shared_context,
+                ):
+                    event.data.setdefault("task_id", task.id)
+                    await queue.put((task.id, "event", event))
+            except Exception as e:
+                logger.exception("[Orchestrator] Worker error for task %s", task.id)
+                agent._result = AgentResult(status="error", error=str(e))
+            finally:
+                result = await agent.get_result()
+                await queue.put((task.id, "done", result))
+
+        # Emit task_start for all
+        for task in tasks:
+            task.status = "running"
+            yield AgentEvent(
+                type="task_start",
+                data={
+                    "task_id": task.id,
+                    "description": task.description,
+                    "task_type": task.type,
+                },
+            )
+
+        # Check all agents are available
+        for task in tasks:
+            if task.agent not in self._agents:
+                logger.error("[Orchestrator] Agent '%s' not available for parallel task %s", task.agent, task.id)
+                task.status = "failed"
+                task.error = f"Agent '{task.agent}' not available"
+                yield AgentEvent(type="task_complete", data={"task_id": task.id})
+                return
+
+        # Launch workers
+        workers = [asyncio.create_task(worker(t)) for t in tasks]
+
+        completed = 0
+        while completed < len(tasks):
+            task_id, msg_type, payload = await queue.get()
+            if msg_type == "done":
+                result = payload  # type: AgentResult
+                task = next(t for t in tasks if t.id == task_id)
+                await self._handle_task_result(task, result)
+                if result.status == "success":
+                    yield AgentEvent(type="task_complete", data={"task_id": task_id})
+                elif result.status == "error" and task.retries >= 3:
+                    yield AgentEvent(
+                        type="error",
+                        data={
+                            "message": (
+                                "Something went wrong while building your project. "
+                                "You can try clicking **Deploy** to retry, or adjust your requirements."
+                            )
+                        },
+                    )
+                completed += 1
+            else:
+                yield payload  # Forward AgentEvent to WebSocket
+
+        await asyncio.gather(*workers, return_exceptions=True)
+
+    async def _handle_task_result(self, task: Task, result: AgentResult) -> None:
+        """Process task result: mark complete/failed, handle retries."""
+        if result.status == "success":
+            logger.info("[Orchestrator] Task %s completed successfully", task.id)
+            self.state.manifest.mark_complete(task.id)
+            if result.files_modified:
+                self.state.files_created.extend(result.files_modified)
+            await self.save_state()
+        elif result.status == "error":
+            logger.warning("[Orchestrator] Task %s failed: %s", task.id, result.error)
+            self.state.manifest.mark_failed(task.id, result.error or "Unknown error")
+            if task.retries < 3:
+                self.state.manifest.reset_for_retry(task.id)
+                logger.warning("Task %s failed (attempt %d), retrying", task.id, task.retries)
+            else:
+                self.state.errors.append(
+                    AgentError(
+                        agent=task.agent,
+                        task_id=task.id,
+                        message=result.error or "Unknown error",
+                    )
+                )
+                await self.save_state()
+
     # ── Validation phase ────────────────────────────────────────
 
     async def _run_validation(self) -> AsyncGenerator[AgentEvent, None]:
@@ -559,6 +717,8 @@ class OrchestratorSession:
             async for event in self._fallback_to_prototype(""):
                 yield event
             return
+
+        yield await self._set_project_state(ProjectState.BUILDING)
 
         agent = self._agents["devops"]
         self._active_agent = agent
@@ -695,6 +855,7 @@ class OrchestratorSession:
             project=self.project,
             task=ad_hoc_task,
             user_message=message,
+            shared_context=self._shared_context,
         ):
             yield event
             if event.type == "ask_user":

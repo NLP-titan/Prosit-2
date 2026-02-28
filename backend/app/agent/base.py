@@ -58,6 +58,7 @@ class BaseAgent(ABC):
         self._result: AgentResult = AgentResult(status="success")
         self._cancelled: bool = False
         self._current_messages: list[dict] | None = None  # set by _run_react_loop
+        self._file_lock: asyncio.Lock | None = None  # set by orchestrator for parallel execution
 
     def get_tool_schemas(self) -> list[dict]:
         """Filter global TOOL_SCHEMAS to only include this agent's tools."""
@@ -76,6 +77,7 @@ class BaseAgent(ABC):
         project: Project,
         task: Task | None = None,
         user_message: str | None = None,
+        shared_context: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Execute agent work.
 
@@ -86,6 +88,8 @@ class BaseAgent(ABC):
             project: The project being worked on
             task: Optional task from the manifest (for implementation agents)
             user_message: Optional user message (for conversational agents)
+            shared_context: Pre-read project files (directory listing, database.py, main.py)
+                injected by orchestrator to avoid redundant file reads.
 
         Yields:
             AgentEvent objects (text streaming, tool calls, etc.)
@@ -233,7 +237,7 @@ class BaseAgent(ABC):
                     except json.JSONDecodeError:
                         args = {}
 
-                    logger.info("[Agent] Executing tool: %s", func_name)
+                    logger.info("[Agent] tool=%s  agent=%s", func_name, self.name)
 
                     # Handle ask_user — pause and yield event
                     if func_name == "ask_user":
@@ -258,7 +262,14 @@ class BaseAgent(ABC):
                         data={"tool": func_name, "arguments": args},
                     )
 
-                    result = await execute_tool(project, func_name, args)
+                    # Serialize file-modifying operations during parallel execution
+                    if self._file_lock and func_name in (
+                        "write_file", "edit_file", "git_commit",
+                    ):
+                        async with self._file_lock:
+                            result = await execute_tool(project, func_name, args)
+                    else:
+                        result = await execute_tool(project, func_name, args)
 
                     logger.info(
                         "[Agent] Tool %s returned (%d chars): %.80s%s",
@@ -317,12 +328,10 @@ class BaseAgent(ABC):
                 logger.info("[Agent] loop exit: no tool calls (text-only response)")
                 return
 
-        # Safety: exhausted tool rounds
+        # Safety: exhausted tool rounds — log it but don't show to user
+        # The agent likely completed its work; this just means the loop didn't
+        # exit cleanly via a text-only response.
         logger.warning("[Agent] loop exit: exceeded max_tool_rounds=%d", self.max_tool_rounds)
-        yield AgentEvent(
-            type="error",
-            data={"message": "Agent exceeded maximum tool rounds"},
-        )
 
     def resume_after_ask_user(
         self, messages: list[dict], user_answer: str

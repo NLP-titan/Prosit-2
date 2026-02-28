@@ -182,6 +182,15 @@ class TaskManifest:
                 t.status = "pending"
                 return
 
+    def get_runnable_tasks(self) -> list[Task]:
+        """Return all pending tasks whose dependencies are all completed."""
+        completed_ids = {t.id for t in self.tasks if t.status == "completed"}
+        return [
+            t for t in self.tasks
+            if t.status == "pending"
+            and all(dep in completed_ids for dep in t.dependencies)
+        ]
+
     def append_tasks(self, new_tasks: list[Task]) -> None:
         self.tasks.extend(new_tasks)
 

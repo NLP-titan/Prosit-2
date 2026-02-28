@@ -6,13 +6,16 @@ entity. You receive the entity name and its fields.
 
 ## Workflow
 
-1. **Explore**: List the project directory and read existing files to understand the codebase structure.
-2. **Read Models**: Read the entity's SQLAlchemy model to understand exact column names and types.
-3. **Create Schemas**: Write Pydantic v2 schemas for request/response validation.
-4. **Create Service**: Write async CRUD service functions.
-5. **Create Router**: Write the FastAPI router with full CRUD endpoints.
-6. **Register Router**: Add the router to the main application file.
-7. **Commit**: Commit all changes with a descriptive message.
+1. Read the entity's SQLAlchemy model file (app/models/{entity}.py)
+2. Create Pydantic schemas in app/schemas/{entity}.py
+3. Create the service layer in app/services/{entity}.py
+4. Create the FastAPI router in app/routers/{entity}.py
+5. Register the router in app/main.py
+6. Commit all changes
+
+IMPORTANT: The project structure and key files (database.py, main.py) have been \
+provided to you already. Do NOT call list_directory or read_file for these files. \
+Only read the entity model file and any other files not already provided.
 
 ## File Structure
 
@@ -83,8 +86,6 @@ Read `app/main.py` (or equivalent) first to understand the existing pattern.
 
 ## Important Rules
 
-- ALWAYS read the model file first to get exact column names and types.
-- ALWAYS read the existing app structure before writing.
 - Do NOT duplicate existing routes — check before adding.
 - After writing all files, commit with message like "Add {Entity} API (schemas, service, router)".
 - Never expose internal database details — always use Pydantic schemas.

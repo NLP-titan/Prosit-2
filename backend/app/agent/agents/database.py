@@ -32,8 +32,14 @@ class DatabaseAgent(BaseAgent):
         project: Project,
         task: Task | None = None,
         user_message: str | None = None,
+        shared_context: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         messages = [{"role": "system", "content": self.system_prompt}]
+
+        if shared_context:
+            messages.append({"role": "user", "content": shared_context})
+            messages.append({"role": "assistant", "content":
+                "I've reviewed the project structure and existing code. Ready to proceed."})
 
         content = self._build_task_instruction(task, user_message)
         messages.append({"role": "user", "content": content})
@@ -78,11 +84,12 @@ class DatabaseAgent(BaseAgent):
 
         parts.append(
             "### Steps\n"
-            "1. List the project directory to understand the structure\n"
-            "2. Read existing model files and the database base class\n"
-            f"3. Create the {entity_name} model file with proper columns and relationships\n"
-            "4. Update models/__init__.py to import the new model (if it exists)\n"
-            f'5. Commit with message "Add {entity_name} model"\n'
+            f"1. Create the {entity_name} model file with proper columns and relationships\n"
+            "2. Update models/__init__.py to import the new model (if it exists)\n"
+            f'3. Commit with message "Add {entity_name} model"\n\n'
+            "NOTE: The project structure and key files (database.py, main.py, models/__init__.py) "
+            "have already been provided. Do NOT call list_directory or read_file for these files. "
+            "Only read files if you need something not already provided.\n"
         )
 
         return "\n".join(parts)

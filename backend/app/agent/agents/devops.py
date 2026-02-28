@@ -54,6 +54,7 @@ class DevOpsAgent(BaseAgent):
         project: Project,
         task: Task | None = None,
         user_message: str | None = None,
+        shared_context: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Scripted flow: validate → build → up → logs → health_check → build_complete or error."""
         project_dir = project.directory
