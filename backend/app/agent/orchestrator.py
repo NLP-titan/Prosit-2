@@ -56,7 +56,43 @@ class OrchestratorSession:
         self._active_agent: BaseAgent | None = None
         self._current_task: Task | None = None
         self._fallback_session = None
+        self._file_handler: logging.FileHandler | None = None
+        self._setup_project_log()
         self._register_agents()
+
+    # ── Per-project file logging ─────────────────────────────────
+
+    def _setup_project_log(self) -> None:
+        """Attach a FileHandler so all app.agent.* logs are also
+        written to ``projects/{project_id}/agent.log``."""
+        log_dir = self.project.directory
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "agent.log"
+
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+        # Attach to the ``app`` namespace so agent, tools, llm, orchestrator
+        # logs all flow into the file.
+        logging.getLogger("app").addHandler(handler)
+        self._file_handler = handler
+        logger.info(
+            "[Orchestrator] Project log → %s", log_path,
+        )
+
+    def _teardown_project_log(self) -> None:
+        if self._file_handler is not None:
+            logging.getLogger("app").removeHandler(self._file_handler)
+            self._file_handler.close()
+            self._file_handler = None
+
+    def __del__(self) -> None:
+        self._teardown_project_log()
 
     def _register_agents(self) -> None:
         agents_to_register = [
@@ -243,6 +279,7 @@ class OrchestratorSession:
             yield AgentEvent(type="agent_message_end")
 
             self.state.current_phase = Phase.PLANNING
+            logger.info("[Orchestrator] Phase transition: research → planning")
             yield AgentEvent(
                 type="phase_transition",
                 data={"from": "research", "to": "planning"},
@@ -284,6 +321,7 @@ class OrchestratorSession:
             yield AgentEvent(type="agent_message_end")
 
             self.state.current_phase = Phase.IMPLEMENTATION
+            logger.info("[Orchestrator] Phase transition: planning → implementation")
             yield AgentEvent(
                 type="phase_transition",
                 data={"from": "planning", "to": "implementation"},
@@ -324,6 +362,10 @@ class OrchestratorSession:
 
             self._current_task = task
             task.status = "running"
+            logger.info(
+                "[Orchestrator] Task dispatch: id=%s  agent=%s  desc=%s",
+                task.id, task.agent, task.description[:100],
+            )
 
             yield AgentEvent(
                 type="task_start",
@@ -358,6 +400,7 @@ class OrchestratorSession:
             self._active_agent = None
 
             if result.status == "success":
+                logger.info("[Orchestrator] Task %s completed successfully", task.id)
                 self.state.manifest.mark_complete(task.id)
                 if result.files_modified:
                     self.state.files_created.extend(result.files_modified)
@@ -367,6 +410,7 @@ class OrchestratorSession:
                 )
                 await self.save_state()
             elif result.status == "error":
+                logger.warning("[Orchestrator] Task %s failed: %s", task.id, result.error)
                 self.state.manifest.mark_failed(task.id, result.error or "Unknown error")
                 if task.retries < 3:
                     self.state.manifest.reset_for_retry(task.id)
@@ -464,6 +508,7 @@ class OrchestratorSession:
         self, message: str
     ) -> AsyncGenerator[AgentEvent, None]:
         classification = await self._classify_interruption(message)
+        logger.info("[Orchestrator] Interruption classified as: %s", classification)
 
         if classification == "UNRELATED":
             async for event in self._respond_conversational(message):
@@ -769,6 +814,7 @@ class OrchestratorSession:
     ) -> AsyncGenerator[AgentEvent, None]:
         from app.agent.core import AgentSession
 
+        logger.info("[Orchestrator] Falling back to prototype AgentSession")
         if self._fallback_session is None:
             self._fallback_session = AgentSession(self.project)
             await self._fallback_session.context.load_from_db(self.project.id)

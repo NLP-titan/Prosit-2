@@ -51,7 +51,7 @@ class BaseAgent(ABC):
     model: str | None = None
     system_prompt: str = ""
     tool_names: list[str] = []
-    max_tool_rounds: int = 20
+    max_tool_rounds: int = 40
 
     def __init__(self) -> None:
         self._pending_ask_user_tc_id: str | None = None
@@ -123,14 +123,20 @@ class BaseAgent(ABC):
         self._pending_ask_user_tc_id = None
         self._current_messages = messages
         tools = self.get_tool_schemas()
+        logger.info(
+            "[Agent] _run_react_loop  agent=%s  model=%s  tools=%d  msgs=%d",
+            self.name, self.model or "default", len(tools), len(messages),
+        )
 
-        for _ in range(self.max_tool_rounds):
+        for round_num in range(self.max_tool_rounds):
             if self._cancelled:
+                logger.info("[Agent] Cancelled by user")
                 yield AgentEvent(
                     type="stopped", data={"message": "Agent stopped by user"}
                 )
                 return
 
+            logger.debug("[Agent] round %d/%d", round_num + 1, self.max_tool_rounds)
             # ── One LLM turn ────────────────────────────────────
             text_parts: list[str] = []
             tool_calls_acc: dict[int, dict] = {}
@@ -193,6 +199,12 @@ class BaseAgent(ABC):
                 yield AgentEvent(type="agent_message_end")
 
             full_text = "".join(text_parts) if text_parts else None
+            if full_text:
+                logger.debug(
+                    "[Agent] text (round %d): %.200s%s",
+                    round_num + 1, full_text[:200],
+                    "..." if len(full_text) > 200 else "",
+                )
 
             # ── Execute tool calls ──────────────────────────────
             if tool_calls_acc:
@@ -226,6 +238,11 @@ class BaseAgent(ABC):
                     # Handle ask_user — pause and yield event
                     if func_name == "ask_user":
                         self._pending_ask_user_tc_id = tc["id"]
+                        logger.info(
+                            "[Agent] ask_user: q=%s  options=%s",
+                            args.get("question", "")[:120],
+                            args.get("options", []),
+                        )
                         yield AgentEvent(
                             type="ask_user",
                             data={
@@ -267,11 +284,13 @@ class BaseAgent(ABC):
 
                     # Check for sentinel returns that orchestrator intercepts
                     if result.startswith("__FINALIZE_SPEC__"):
+                        logger.info("[Agent] finalize_spec sentinel received")
                         self._result = AgentResult(status="success")
                         self._result.spec = _parse_spec_from_sentinel(result)
                         return
 
                     if result.startswith("__SUBMIT_PLAN__"):
+                        logger.info("[Agent] submit_plan sentinel received")
                         self._result = AgentResult(status="success")
                         self._result.manifest = _parse_manifest_from_sentinel(
                             result
@@ -295,9 +314,11 @@ class BaseAgent(ABC):
 
             # If no tool calls, the agent is done
             if not has_tool_calls:
+                logger.info("[Agent] loop exit: no tool calls (text-only response)")
                 return
 
         # Safety: exhausted tool rounds
+        logger.warning("[Agent] loop exit: exceeded max_tool_rounds=%d", self.max_tool_rounds)
         yield AgentEvent(
             type="error",
             data={"message": "Agent exceeded maximum tool rounds"},

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import asyncio
+import logging
+import time
 from pathlib import Path
 
 from app.models.project import Project, ProjectState
@@ -9,6 +11,8 @@ from app.services import git as git_svc
 from app.services import docker as docker_svc
 from app.services import project as project_svc
 from app.generator.scaffold import scaffold_project
+
+logger = logging.getLogger(__name__)
 
 
 async def _run_shell(command: str, cwd: Path) -> dict:
@@ -37,6 +41,17 @@ async def execute_tool(
 ) -> str:
     """Execute a tool and return the result as a string."""
     project_dir = project.directory
+    t0 = time.perf_counter()
+
+    # Log key args per tool type
+    key_arg = ""
+    if tool_name in ("read_file", "write_file", "edit_file", "list_directory"):
+        key_arg = arguments.get("path", "")
+    elif tool_name == "run_command":
+        key_arg = arguments.get("command", "")[:120]
+    elif tool_name == "docker_logs":
+        key_arg = arguments.get("service", "")
+    logger.info("[Tool] %s  %s", tool_name, key_arg)
 
     try:
         if tool_name == "read_file":
@@ -173,7 +188,11 @@ async def execute_tool(
             return f"__SUBMIT_PLAN__{manifest_json}"
 
         else:
-            return f"Unknown tool: {tool_name}"
+            result = f"Unknown tool: {tool_name}"
+            logger.warning("[Tool] Unknown tool: %s", tool_name)
+            return result
 
     except Exception as e:
+        elapsed = time.perf_counter() - t0
+        logger.error("[Tool] %s ERROR (%.1fs): %s", tool_name, elapsed, e)
         return f"Error executing {tool_name}: {e}"

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+import time
+
 from openai import AsyncOpenAI
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _client: AsyncOpenAI | None = None
 
@@ -27,8 +32,15 @@ async def chat_completion_stream(
     Args:
         model: If provided, use this model. Otherwise use settings.OPENROUTER_MODEL.
     """
+    used_model = model or settings.OPENROUTER_MODEL
+    logger.info(
+        "[LLM] stream start  model=%s  msgs=%d  has_tools=%s",
+        used_model, len(messages), bool(tools),
+    )
+    t0 = time.perf_counter()
+
     kwargs: dict = {
-        "model": model or settings.OPENROUTER_MODEL,
+        "model": used_model,
         "messages": messages,
         "stream": True,
         "temperature": 0.2,
@@ -42,6 +54,9 @@ async def chat_completion_stream(
     async for chunk in stream:
         yield chunk
 
+    elapsed = time.perf_counter() - t0
+    logger.info("[LLM] stream done   model=%s  %.1fs", used_model, elapsed)
+
 
 async def chat_completion(
     messages: list[dict],
@@ -51,10 +66,20 @@ async def chat_completion(
 
     Returns the text content of the response.
     """
+    used_model = model or settings.OPENROUTER_MODEL
+    logger.info("[LLM] completion start  model=%s  msgs=%d", used_model, len(messages))
+    t0 = time.perf_counter()
+
     client = get_client()
     response = await client.chat.completions.create(
-        model=model or settings.OPENROUTER_MODEL,
+        model=used_model,
         messages=messages,
         temperature=0.1,
     )
-    return response.choices[0].message.content or ""
+    result = response.choices[0].message.content or ""
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "[LLM] completion done  model=%s  %.1fs  len=%d",
+        used_model, elapsed, len(result),
+    )
+    return result
