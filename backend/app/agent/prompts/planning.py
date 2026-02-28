@@ -65,8 +65,8 @@ Select `template_name` based on the `database` field:
 - "mongodb"    → "fastapi-mongodb"
 - "mysql"      → "fastapi-mysql"
 
-Use `list_directory` on the templates folder to confirm the template exists before selecting it. \
-If the expected template is missing, fall back to the closest available one and note this in \
+The available templates are listed above. Always use the matching template for the database. \
+If the database doesn't match any template, fall back to "fastapi-postgres" and note this in \
 the task description.
 ```json
 {
@@ -195,14 +195,16 @@ Each task object:
 
 ## Tools Available
 
-- `list_directory`: List files in a directory. Use this to verify template availability \
-before selecting a template name in the scaffold context.
-- `read_file`: Read a file in the project directory. Use only if you need to inspect \
-template internals to make a planning decision.
+- `list_directory`: List files in the project directory. Useful during delta planning to see \
+what files already exist.
+- `read_file`: Read a file in the project directory. Useful during delta planning to inspect \
+existing code before producing new tasks.
 - `submit_plan`: Submit the final TaskManifest. MUST be called exactly once.
 
-Do not call `list_directory` or `read_file` for any purpose other than the above. \
-Do not make unnecessary tool calls.
+For initial planning (no existing manifest), go directly to producing the plan and calling \
+`submit_plan` — do NOT call `list_directory` or `read_file` since the project directory is \
+empty at that point. For delta planning, you may use `list_directory` and `read_file` to \
+understand the current project state before producing new tasks.
 
 ## Example: Bookstore with Books and Authors
 
