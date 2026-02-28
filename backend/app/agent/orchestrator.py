@@ -432,7 +432,11 @@ class OrchestratorSession:
 
             yield AgentEvent(
                 type="task_start",
-                data={"task_id": task.id, "description": task.description},
+                data={
+                    "task_id": task.id,
+                    "description": task.description,
+                    "task_type": task.type,
+                },
             )
 
             # Dispatch to the named agent

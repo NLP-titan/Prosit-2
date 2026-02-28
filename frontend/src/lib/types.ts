@@ -42,6 +42,7 @@ export interface WSMessage {
   // task_start / task_complete
   task_id?: string;
   description?: string;
+  task_type?: string;
   // phase_transition
   from?: string;
   to?: string;
@@ -63,6 +64,7 @@ export interface ToolGroup {
 export interface BuildTask {
   id: string;
   description: string;
+  taskType: string;
   status: "pending" | "running" | "complete" | "error";
 }
 

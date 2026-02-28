@@ -166,9 +166,9 @@ async def execute_tool(
         elif tool_name == "check_spec_completeness":
             from app.agent.state import ProjectSpec
 
-            spec_json = arguments.get("spec_json", "{}")
+            spec_raw = arguments.get("spec_json", "{}")
             try:
-                spec_data = json.loads(spec_json)
+                spec_data = spec_raw if isinstance(spec_raw, dict) else json.loads(spec_raw)
                 spec = ProjectSpec.from_dict(spec_data)
                 missing = spec.missing_fields()
                 return json.dumps({"complete": len(missing) == 0, "missing": missing})

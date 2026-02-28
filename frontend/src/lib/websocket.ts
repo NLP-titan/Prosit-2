@@ -19,9 +19,6 @@ export function useWebSocket(
 
     ws.onmessage = (event) => {
       const msg: WSMessage = JSON.parse(event.data);
-      if (["task_start", "task_complete", "phase_transition"].includes(msg.type)) {
-        console.log("[WS] Build event:", msg.type, msg);
-      }
       switch (msg.type) {
         case "agent_message_start":
           dispatch({ type: "START_ASSISTANT_MESSAGE" });
@@ -85,6 +82,7 @@ export function useWebSocket(
             type: "TASK_START",
             taskId: msg.task_id || "",
             description: msg.description || "",
+            taskType: msg.task_type || "",
           });
           break;
         case "task_complete":

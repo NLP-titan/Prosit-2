@@ -19,7 +19,7 @@ export type AppAction =
   | { type: "SELECT_FILE"; path: string | null }
   | { type: "ASK_USER"; question: string; options: string[] }
   | { type: "SET_MESSAGES"; messages: ChatMessage[] }
-  | { type: "TASK_START"; taskId: string; description: string }
+  | { type: "TASK_START"; taskId: string; description: string; taskType: string }
   | { type: "TASK_COMPLETE"; taskId: string }
   | { type: "PHASE_TRANSITION"; from: string; to: string };
 
@@ -27,6 +27,14 @@ let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}`;
 }
+
+// Internal tools that shouldn't create visible tool_group entries
+const HIDDEN_TOOLS = new Set([
+  "check_spec_completeness",
+  "finalize_spec",
+  "submit_plan",
+  "ask_user",
+]);
 
 function getToolSummary(tool: string, args: Record<string, unknown>): string {
   const path = args?.path as string | undefined;
@@ -102,7 +110,10 @@ function findBuildProgress(messages: ChatMessage[]): { index: number; msg: ChatM
 function isBuildActive(messages: ChatMessage[]): boolean {
   const bp = findBuildProgress(messages);
   if (!bp) return false;
-  return bp.msg.buildTasks?.some((t) => t.status === "running") ?? false;
+  const tasks = bp.msg.buildTasks || [];
+  // Active if no tasks yet (planning/preparing) or any task is not yet complete
+  if (tasks.length === 0) return true;
+  return tasks.some((t) => t.status !== "complete");
 }
 
 function closeActiveToolGroups(messages: ChatMessage[]): ChatMessage[] {
@@ -161,8 +172,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "ADD_TOOL_CALL": {
+      // Skip internal orchestrator tools — they're invisible plumbing
+      if (HIDDEN_TOOLS.has(action.tool)) return state;
       const bp = findBuildProgress(state.messages);
-      console.log("[Reducer] ADD_TOOL_CALL:", action.tool, "buildActive:", isBuildActive(state.messages), "hasBP:", !!bp);
       if (bp && isBuildActive(state.messages)) {
         const msgs = [...state.messages];
         const summary = getToolSummary(action.tool, action.args);
@@ -180,6 +192,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "ADD_TOOL_RESULT": {
+      if (HIDDEN_TOOLS.has(action.tool)) return state;
       const bp = findBuildProgress(state.messages);
       if (bp && isBuildActive(state.messages)) {
         const msgs = [...state.messages];
@@ -322,7 +335,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, messages: action.messages };
 
     case "TASK_START": {
-      console.log("[Reducer] TASK_START:", action.taskId, action.description);
       const msgs = [...state.messages];
       let bp = findBuildProgress(msgs);
       if (!bp) {
@@ -341,6 +353,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const newTask: BuildTask = {
         id: action.taskId,
         description: action.description,
+        taskType: action.taskType,
         status: "running",
       };
       tasks.push(newTask);
@@ -369,9 +382,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "PHASE_TRANSITION": {
-      console.log("[Reducer] PHASE_TRANSITION:", action.from, "→", action.to);
       const msgs = [...state.messages];
-      if (action.to === "implementation") {
+      if (action.to === "planning" || action.to === "implementation") {
         const bp = findBuildProgress(msgs);
         if (!bp) {
           msgs.push({
