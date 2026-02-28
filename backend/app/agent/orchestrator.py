@@ -835,6 +835,10 @@ class OrchestratorSession:
         self, result: AgentResult
     ) -> AsyncGenerator[AgentEvent, None]:
         phase = self.state.current_phase
+        logger.info(
+            "[Orchestrator] _handle_agent_completion: phase=%s status=%s has_spec=%s has_manifest=%s",
+            phase.value, result.status, result.spec is not None, result.manifest is not None,
+        )
 
         if phase == Phase.RESEARCH and result.spec:
             self.state.spec = result.spec

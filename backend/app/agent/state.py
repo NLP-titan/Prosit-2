@@ -85,10 +85,24 @@ class ProjectSpec:
     def from_dict(cls, data: dict) -> ProjectSpec:
         entities = []
         for e_data in data.get("entities", []):
-            fields = [FieldSpec(**f) for f in e_data.get("fields", [])]
+            fields = [
+                FieldSpec(
+                    name=f["name"],
+                    type=f.get("type", "str"),
+                    nullable=f.get("nullable", False),
+                    unique=f.get("unique", False),
+                    default=f.get("default"),
+                )
+                for f in e_data.get("fields", [])
+            ]
             entities.append(EntitySpec(name=e_data["name"], fields=fields))
         relationships = [
-            Relationship(**r) for r in data.get("relationships", [])
+            Relationship(
+                entity_a=r["entity_a"],
+                entity_b=r["entity_b"],
+                type=r["type"],
+            )
+            for r in data.get("relationships", [])
         ]
         return cls(
             entities=entities,

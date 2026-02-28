@@ -351,7 +351,8 @@ def _parse_spec_from_sentinel(result: str) -> ProjectSpec | None:
         json_str = result[len("__FINALIZE_SPEC__") :]
         data = json.loads(json_str)
         return ProjectSpec.from_dict(data)
-    except Exception:
+    except Exception as e:
+        logger.error("[Agent] Failed to parse spec from sentinel: %s", e)
         return None
 
 
@@ -363,5 +364,6 @@ def _parse_manifest_from_sentinel(result: str) -> TaskManifest | None:
         if isinstance(data, list):
             return TaskManifest.from_dict(data)
         return None
-    except Exception:
+    except Exception as e:
+        logger.error("[Agent] Failed to parse manifest from sentinel: %s", e)
         return None
