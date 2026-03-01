@@ -166,6 +166,20 @@ async def run_scenario(
                     )
                     break
 
+                # ── waiting_for_user after implementation → trigger deploy ──
+                if event_type == "waiting_for_user":
+                    # Check if we've passed through implementation
+                    # (phase_transition to validation means code is done, needs deploy)
+                    has_validation_phase = any(
+                        e.get("type") == "phase_transition"
+                        and e.get("to") == "validation"
+                        for e in result.events
+                    )
+                    if has_validation_phase and not result.completed:
+                        logger.info("[%s] Implementation done, triggering deploy...", scenario.id)
+                        await ws.send(json.dumps({"message": "deploy"}))
+                        continue
+
                 # ── ask_user → auto-respond ────────────────────
                 if event_type == "ask_user":
                     result.ask_user_count += 1

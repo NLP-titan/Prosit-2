@@ -29,4 +29,4 @@ MAX_BUILD_TIME = 600         # 0% score
 
 # ── LLM rounds scoring ─────────────────────────────────────────
 IDEAL_LLM_ROUNDS = 10       # 100% score
-MAX_LLM_ROUNDS = 60         # 0% score
+MAX_LLM_ROUNDS = 80         # 0% score
