@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BackendForge",
+  title: "Kruya-Jenjen",
   description: "Build backend APIs with natural language",
 };
 

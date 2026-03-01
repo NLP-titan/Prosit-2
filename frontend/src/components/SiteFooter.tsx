@@ -13,7 +13,7 @@ export default function SiteFooter() {
               <Terminal className="w-4 h-4 text-black" />
             </div>
             <span className="font-bold text-xl tracking-tight">
-              Mesora.
+              Kruya-Jenjen.
             </span>
           </div>
           <p className="text-gray-400 max-w-xs font-light text-sm">
@@ -111,7 +111,7 @@ export default function SiteFooter() {
       </div>
       <div className="page-shell max-w-6xl mt-12 pt-6 border-t border-white/10 text-[11px] md:text-xs text-gray-500 flex flex-col md:flex-row justify-between items-center gap-3">
         <p>
-          © {new Date().getFullYear()} Mesora AI Research Lab. All rights
+          © {new Date().getFullYear()} Kruya-Jenjen AI Research Lab. All rights
           reserved.
         </p>
         <div className="flex gap-6">

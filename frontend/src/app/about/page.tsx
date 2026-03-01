@@ -20,7 +20,7 @@ export default function AboutPage() {
           <div className="grid md:grid-cols-2 gap-12 items-start">
             <div className="space-y-6 text-base md:text-lg text-gray-600 leading-relaxed font-light">
               <p>
-                <span className="text-gray-900 font-medium">Mesora</span> is an
+                <span className="text-gray-900 font-medium">Kruya-Jenjen</span> is an
                 AI research lab based in Ghana. We are obsessed with coding
                 agents and their potential to transform how software is built.
               </p>
@@ -31,7 +31,7 @@ export default function AboutPage() {
                 experts.
               </p>
               <p>
-                Mesora lets you explain your app like you would to a teammate,
+                Kruya-Jenjen lets you explain your app like you would to a teammate,
                 then turns that explanation into real, running infrastructure.
               </p>
             </div>
