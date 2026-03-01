@@ -64,6 +64,10 @@ function getToolSummary(tool: string, args: Record<string, unknown>): string {
       return "Reading container logs";
     case "scaffold_project":
       return "Scaffolding project";
+    case "validate_project":
+      return "Validating project";
+    case "docker_build":
+      return "Building Docker images";
     case "build_complete":
       return "Finalizing build";
     default:
