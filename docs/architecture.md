@@ -218,11 +218,12 @@ flowchart TD
     MANIFEST_DONE -->|Yes| TRANSITION_IMPL[Transition → Implementation]
     TRANSITION_IMPL --> PICK_TASK
 
-    PICK_TASK --> DEPS_MET{Dependencies<br>met?}
-    DEPS_MET -->|No| PICK_TASK
-    DEPS_MET -->|Yes| DISPATCH[Dispatch to agent:<br>scaffold / database / api]
+    PICK_TASK --> BATCH{How many tasks<br>have deps met?}
+    BATCH -->|Single| DISPATCH[Dispatch to agent]
+    BATCH -->|Multiple| PARALLEL[Run in parallel<br>asyncio.Queue + file lock]
 
     DISPATCH --> RESULT{Agent Result?}
+    PARALLEL --> RESULT
     RESULT -->|Success| MARK_DONE[Mark task complete<br>Update SharedState]
     RESULT -->|Error| ERROR_HANDLE[Record error<br>Retry up to 3x]
 
@@ -233,7 +234,10 @@ flowchart TD
 
     RUN_DEVOPS --> DEPLOY_OK{Healthy?}
     DEPLOY_OK -->|Yes| COMPLETE([build_complete<br>Return Swagger URL])
-    DEPLOY_OK -->|No| ERROR_HANDLE
+    DEPLOY_OK -->|No| AUTO_FIX[Dispatch fix agent<br>based on error details]
+    AUTO_FIX --> RETRY{Attempt < 3?}
+    RETRY -->|Yes| RUN_DEVOPS
+    RETRY -->|No| ESCALATE[Escalate to user]
 
     WAIT -->|user responds| START
 
@@ -402,14 +406,19 @@ flowchart LR
 
 ## 7. Implementation Phase — Internal Detail
 
-How the orchestrator dispatches tasks to specialist agents.
+How the orchestrator dispatches tasks to specialist agents. Tasks with satisfied dependencies are executed **in parallel** using an `asyncio.Queue`-based worker pool with a shared file lock for write serialization.
+
+After the scaffold task completes, the orchestrator builds a **shared context** (directory listing, `database.py`, `main.py`, `models/__init__.py`) that is pre-seeded into subsequent agent messages, eliminating redundant file reads.
 
 ```mermaid
 flowchart TD
     subgraph ORCHESTRATOR["Orchestrator — Task Scheduler"]
         O1[Read TaskManifest]
-        O2{Pick next task<br>with deps met}
-        O3[Dispatch to agent]
+        O2{Get runnable tasks<br>all deps met}
+        O2B{Single or<br>multiple?}
+        O3A[Run sequentially]
+        O3B[Run in parallel<br>asyncio.Queue + file lock]
+        O_CTX[Build shared context<br>after scaffold]
         O4[Receive AgentResult]
         O5{Status?}
         O6[Mark task complete<br>Update SharedState]
@@ -425,15 +434,14 @@ flowchart TD
     end
 
     subgraph DATABASE["DatabaseAgent"]
-        DB1[Read existing models<br>read_file]
+        DB1[Receive shared context<br>directory + database.py + main.py]
         DB2[Write SQLAlchemy model<br>write_file]
         DB3[Generate relationships<br>FKs / association tables]
-        DB4[Run alembic migration<br>run_command]
-        DB5[git_commit per entity]
+        DB4[git_commit per entity]
     end
 
     subgraph API["APIAgent"]
-        A1[Read existing models<br>read_file]
+        A1[Receive shared context<br>+ read model file]
         A2[Write Pydantic schemas<br>write_file]
         A3[Write FastAPI router<br>write_file]
         A4[Write service layer<br>write_file]
@@ -451,14 +459,17 @@ flowchart TD
     end
 
     O1 --> O2
-    O2 -->|scaffold task| S1 --> S2 --> O4
-    O2 -->|model task| DB1 --> DB2 --> DB3 --> DB4 --> DB5 --> O4
-    O2 -->|route task| A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> O4
+    O2 --> O2B
+    O2B -->|single| O3A --> O4
+    O2B -->|multiple| O3B --> O4
+    O2 -->|scaffold task| S1 --> S2 --> O_CTX --> O4
+    O2 -->|model tasks| DB1 --> DB2 --> DB3 --> DB4 --> O4
+    O2 -->|route tasks| A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> O4
 
     O4 --> O5
     O5 -->|success| O6 --> O10
     O5 -->|error| O7 --> O8
-    O8 -->|yes| O3
+    O8 -->|yes| O3A
     O8 -->|no| O9
     O10 -->|no| O2
     O10 -->|yes| DONE([→ Validation Phase])
@@ -476,11 +487,19 @@ flowchart TD
     style FILES fill:#FEF9E7,stroke:#F39C12
 ```
 
+### Parallel Execution Details
+
+- **Batch selection:** `get_runnable_tasks()` returns all pending tasks whose dependencies are satisfied
+- **Single task:** Runs directly in the main coroutine (no queue overhead)
+- **Multiple tasks:** Each gets a fresh agent instance with a shared `asyncio.Lock` for file-modifying operations (`write_file`, `edit_file`, `git_commit`)
+- **Context seeding:** After scaffold, the orchestrator pre-reads key files and passes them as `shared_context` so agents skip redundant `read_file` / `list_directory` calls
+- **Timeouts:** Each agent run is bounded by `AGENT_TIMEOUT` (default 300s); the queue has a matching timeout to prevent deadlocks
+
 ---
 
 ## 8. Validation + DevOps Phase — Internal Detail
 
-How validation catches errors and the DevOps agent deploys.
+How validation catches errors and the DevOps agent deploys. The orchestrator runs a **deploy → auto-fix → retry** loop (up to 3 attempts) that dispatches the appropriate specialist agent to fix errors identified by the DevOps agent.
 
 ```mermaid
 flowchart TD
@@ -490,51 +509,49 @@ flowchart TD
 
     subgraph VALIDATION["ValidationRunner (pure Python, no LLM)"]
         V1[Collect all .py files<br>in project directory]
-        V2[Syntax Check<br>python -m py_compile]
+        V2[Syntax + Import Check<br>in-process ast.parse per file]
         V3{Pass?}
-        V4[Import Check<br>verify imports resolve]
-        V5{Pass?}
     end
 
-    subgraph DEVOPS["DevOpsAgent (LLM)"]
+    subgraph DEVOPS["DevOpsAgent (scripted, no LLM)"]
         D1[docker compose build]
         D2{Build OK?}
         D3[docker compose up -d]
-        D4[docker logs — check startup]
-        D5{App started?}
-        D6[health_check<br>GET /health]
+        D4[Wait 5s initial delay]
+        D5[health_check with retries<br>GET /health, fallback /docs]
         D7{Healthy?}
         D8[build_complete<br>swagger_url + api_url]
     end
 
-    subgraph ERROR_LOOP["Error Recovery"]
-        E1[Parse error details:<br>- file path<br>- error message<br>- line number]
-        E2[Return AgentResult<br>status = error]
-        E3[Orchestrator re-dispatches<br>to relevant impl agent]
-        E4{Retry count < 3?}
-        E5[Escalate to user<br>via orchestrator]
+    subgraph ERROR_LOOP["Auto-Fix Recovery (up to 3 attempts)"]
+        E1[Parse error details:<br>- file path<br>- error message<br>- suggested_agent<br>- build_error output]
+        E2[Return AgentResult<br>status = error<br>+ state_updates]
+        E3{Suggested agent<br>available?}
+        E4[Build fix instruction<br>with error context]
+        E5[Dispatch fix agent<br>database / api / scaffold]
+        E6[Fix agent reads file<br>applies fix, commits]
+        E7{Attempt < 3?}
+        E8[Escalate to user<br>via orchestrator]
     end
 
     subgraph SUCCESS["Output"]
-        S1["🚀 Swagger UI: localhost:PORT/docs"]
-        S2["🔗 API URL: localhost:PORT"]
+        S1["Swagger UI: HOST:PORT/docs"]
+        S2["API URL: HOST:PORT"]
     end
 
     I1 --> V1 --> V2 --> V3
     V3 -->|fail| E1
-    V3 -->|pass| V4 --> V5
-    V5 -->|fail| E1
-    V5 -->|pass| D1 --> D2
+    V3 -->|pass| D1 --> D2
     D2 -->|fail| E1
-    D2 -->|pass| D3 --> D4 --> D5
-    D5 -->|fail| E1
-    D5 -->|pass| D6 --> D7
+    D2 -->|pass| D3 --> D4 --> D5 --> D7
     D7 -->|fail| E1
     D7 -->|pass| D8 --> S1 & S2
 
-    E1 --> E2 --> E3 --> E4
-    E4 -->|yes| V1
-    E4 -->|no| E5
+    E1 --> E2 --> E3
+    E3 -->|yes| E4 --> E5 --> E6 --> E7
+    E3 -->|no| E7
+    E7 -->|yes| V1
+    E7 -->|no| E8
 
     style INPUT fill:#FEF9E7,stroke:#F39C12
     style VALIDATION fill:#EBF5FB,stroke:#2E86C1
@@ -542,6 +559,18 @@ flowchart TD
     style ERROR_LOOP fill:#FDEDEC,stroke:#E74C3C
     style SUCCESS fill:#EAFAF1,stroke:#27AE60
 ```
+
+### DevOps Agent Details
+
+The DevOps agent is **scripted** (not LLM-driven) — it runs a fixed sequence of steps with no LLM calls:
+
+1. **Validate** — In-process `ast.parse()` on all `.py` files + import resolution against `requirements.txt` (replaces the old subprocess-per-file `py_compile`)
+2. **Build** — `docker compose build`; on failure, calls `get_build_errors()` to extract meaningful error messages
+3. **Start** — `docker compose up -d` with 5s initial wait before health checks
+4. **Health check** — Up to 5 retries with 5s intervals; falls back to `/docs` if `/health` doesn't exist
+5. **build_complete** — Emits the event with Swagger URL and API URL
+
+On any failure, the agent returns a structured `AgentResult` with `state_updates` containing `suggested_agent`, `suggested_fix`, `error_file_path`, and `build_error` output. The orchestrator uses these to dispatch the correct fix agent.
 
 ---
 
@@ -798,3 +827,37 @@ stateDiagram-v2
 
     Complete --> [*]
 ```
+
+---
+
+## 13. Resilience and Error Recovery
+
+How the system handles failures at each layer.
+
+### LLM Layer (`llm.py`)
+
+- **Client timeout:** 10s connect, 120s read (configurable via `LLM_TIMEOUT`)
+- **Retry with backoff:** Up to 3 attempts with exponential backoff (2s, 4s, 8s) on transient errors (429, 502, 503, 504, connection resets, timeouts)
+- **Non-streaming calls** (`chat_completion`) use the same retry logic for classification tasks
+
+### ReAct Loop (`base.py`)
+
+- **Per-turn retry:** Each LLM call within the ReAct loop is retried up to `LLM_MAX_RETRIES` times before giving up
+- **Partial stream cleanup:** If a stream fails mid-response, the partial `agent_message_start` is properly closed before retry
+- **Tool execution:** File-modifying tools (`write_file`, `edit_file`, `git_commit`) are serialized via `asyncio.Lock` during parallel execution
+
+### Orchestrator (`orchestrator.py`)
+
+- **Agent timeout:** Each `agent.run()` is bounded by `AGENT_TIMEOUT` (default 300s)
+- **Parallel task timeout:** `asyncio.Queue.get()` has a matching timeout; hung workers are cancelled and tasks marked for retry
+- **Task retry:** Failed tasks are retried up to 3 times before escalating
+- **Validation auto-fix:** Deploy failures trigger automatic fix dispatch to the suggested agent (up to 3 deploy → fix → retry cycles)
+
+### Configuration (`config.py`)
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `LLM_TIMEOUT` | 120s | Per-request HTTP timeout |
+| `LLM_MAX_RETRIES` | 3 | Retry count for transient LLM failures |
+| `LLM_RETRY_BASE_DELAY` | 2.0s | Exponential backoff base |
+| `AGENT_TIMEOUT` | 300s | Max time for a single agent run |
