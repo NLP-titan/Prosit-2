@@ -1,0 +1,117 @@
+{
+  "timestamp": "2026-03-01T14:58:07Z",
+  "aggregate": {
+    "total_scenarios": 4,
+    "completed_count": 0,
+    "completion_rate": 0.0,
+    "avg_build_time": 0.0,
+    "avg_tool_calls": 47.25,
+    "avg_endpoint_coverage": 0.0,
+    "avg_schema_match": 0.0,
+    "avg_final_score": 0.036500000000000005,
+    "by_complexity": {
+      "trivial": {
+        "count": 1,
+        "completed": 0,
+        "avg_score": 0.082,
+        "avg_build_time": 0
+      },
+      "simple": {
+        "count": 1,
+        "completed": 0,
+        "avg_score": 0.04000000000000001,
+        "avg_build_time": 0
+      },
+      "medium": {
+        "count": 1,
+        "completed": 0,
+        "avg_score": 0.024,
+        "avg_build_time": 0
+      },
+      "complex": {
+        "count": 1,
+        "completed": 0,
+        "avg_score": 0.0,
+        "avg_build_time": 0
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "s1_todo",
+      "scenario_name": "Todo API",
+      "complexity": "trivial",
+      "completed": false,
+      "build_time": 268.3533275127411,
+      "tool_calls": 19,
+      "agent_messages": 10,
+      "ask_user_count": 1,
+      "error": "Timed out after 600s",
+      "endpoint_coverage": 0.0,
+      "schema_match_score": 0.0,
+      "completion_score": 0.0,
+      "build_time_score": 0.0,
+      "llm_rounds_score": 0.82,
+      "final_score": 0.082,
+      "schema_details": [],
+      "endpoint_details": []
+    },
+    {
+      "scenario_id": "s2_blog",
+      "scenario_name": "Blog API",
+      "complexity": "simple",
+      "completed": false,
+      "build_time": 286.4975769519806,
+      "tool_calls": 40,
+      "agent_messages": 14,
+      "ask_user_count": 1,
+      "error": "Timed out after 600s",
+      "endpoint_coverage": 0.0,
+      "schema_match_score": 0.0,
+      "completion_score": 0.0,
+      "build_time_score": 0.0,
+      "llm_rounds_score": 0.4,
+      "final_score": 0.04000000000000001,
+      "schema_details": [],
+      "endpoint_details": []
+    },
+    {
+      "scenario_id": "s3_ecommerce",
+      "scenario_name": "E-commerce API",
+      "complexity": "medium",
+      "completed": false,
+      "build_time": 370.2917673587799,
+      "tool_calls": 48,
+      "agent_messages": 17,
+      "ask_user_count": 1,
+      "error": "Timed out after 600s",
+      "endpoint_coverage": 0.0,
+      "schema_match_score": 0.0,
+      "completion_score": 0.0,
+      "build_time_score": 0.0,
+      "llm_rounds_score": 0.24,
+      "final_score": 0.024,
+      "schema_details": [],
+      "endpoint_details": []
+    },
+    {
+      "scenario_id": "s4_school",
+      "scenario_name": "School Management API",
+      "complexity": "complex",
+      "completed": false,
+      "build_time": 381.53053092956543,
+      "tool_calls": 82,
+      "agent_messages": 28,
+      "ask_user_count": 1,
+      "error": "Timed out after 600s",
+      "endpoint_coverage": 0.0,
+      "schema_match_score": 0.0,
+      "completion_score": 0.0,
+      "build_time_score": 0.0,
+      "llm_rounds_score": 0.0,
+      "final_score": 0.0,
+      "schema_details": [],
+      "endpoint_details": []
+    }
+  ]
+}

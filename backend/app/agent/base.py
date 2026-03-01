@@ -132,6 +132,9 @@ class BaseAgent(ABC):
             self.name, self.model or "default", len(tools), len(messages),
         )
 
+        from app.config import settings as _settings
+        llm_max_retries = _settings.LLM_MAX_RETRIES
+
         for round_num in range(self.max_tool_rounds):
             if self._cancelled:
                 logger.info("[Agent] Cancelled by user")
@@ -141,62 +144,87 @@ class BaseAgent(ABC):
                 return
 
             logger.debug("[Agent] round %d/%d", round_num + 1, self.max_tool_rounds)
-            # ── One LLM turn ────────────────────────────────────
+            # ── One LLM turn (with retry) ─────────────────────────
             text_parts: list[str] = []
             tool_calls_acc: dict[int, dict] = {}
             started_text = False
             has_tool_calls = False
+            llm_success = False
 
-            try:
-                async for chunk in chat_completion_stream(
-                    messages, tools=tools, model=self.model
-                ):
-                    if self._cancelled:
-                        return
-                    delta = chunk.choices[0].delta if chunk.choices else None
-                    if delta is None:
-                        continue
+            for llm_attempt in range(llm_max_retries):
+                text_parts.clear()
+                tool_calls_acc.clear()
+                started_text = False
 
-                    # Stream text content
-                    if delta.content:
-                        if not started_text:
-                            yield AgentEvent(type="agent_message_start")
-                            started_text = True
-                        yield AgentEvent(
-                            type="agent_message_delta",
-                            data={"token": delta.content},
+                try:
+                    async for chunk in chat_completion_stream(
+                        messages, tools=tools, model=self.model
+                    ):
+                        if self._cancelled:
+                            return
+                        delta = chunk.choices[0].delta if chunk.choices else None
+                        if delta is None:
+                            continue
+
+                        # Stream text content
+                        if delta.content:
+                            if not started_text:
+                                yield AgentEvent(type="agent_message_start")
+                                started_text = True
+                            yield AgentEvent(
+                                type="agent_message_delta",
+                                data={"token": delta.content},
+                            )
+                            text_parts.append(delta.content)
+
+                        # Accumulate tool calls
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in tool_calls_acc:
+                                    tool_calls_acc[idx] = {
+                                        "id": tc.id or "",
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                if tc.id:
+                                    tool_calls_acc[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_calls_acc[idx]["function"][
+                                            "name"
+                                        ] += tc.function.name
+                                    if tc.function.arguments:
+                                        tool_calls_acc[idx]["function"][
+                                            "arguments"
+                                        ] += tc.function.arguments
+
+                    llm_success = True
+                    break  # LLM call succeeded
+
+                except Exception as e:
+                    if started_text:
+                        yield AgentEvent(type="agent_message_end")
+                        started_text = False
+
+                    if llm_attempt < llm_max_retries - 1:
+                        delay = 2.0 * (2 ** llm_attempt)
+                        logger.warning(
+                            "[Agent] LLM error (attempt %d/%d): %s. Retrying in %.1fs...",
+                            llm_attempt + 1, llm_max_retries, e, delay,
                         )
-                        text_parts.append(delta.content)
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.exception("[Agent] LLM error (final attempt)")
+                        yield AgentEvent(
+                            type="error", data={"message": f"LLM error: {e}"}
+                        )
+                        self._result = AgentResult(
+                            status="error", error=f"LLM error: {e}"
+                        )
+                        return
 
-                    # Accumulate tool calls
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            idx = tc.index
-                            if idx not in tool_calls_acc:
-                                tool_calls_acc[idx] = {
-                                    "id": tc.id or "",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                            if tc.id:
-                                tool_calls_acc[idx]["id"] = tc.id
-                            if tc.function:
-                                if tc.function.name:
-                                    tool_calls_acc[idx]["function"][
-                                        "name"
-                                    ] += tc.function.name
-                                if tc.function.arguments:
-                                    tool_calls_acc[idx]["function"][
-                                        "arguments"
-                                    ] += tc.function.arguments
-            except Exception as e:
-                logger.exception("[Agent] LLM error")
-                yield AgentEvent(
-                    type="error", data={"message": f"LLM error: {e}"}
-                )
-                self._result = AgentResult(
-                    status="error", error=f"LLM error: {e}"
-                )
+            if not llm_success:
                 return
 
             if started_text:

@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     PROJECTS_DIR: Path = Path(__file__).resolve().parent.parent.parent / "projects"
     TEMPLATES_DIR: Path = Path(__file__).resolve().parent.parent.parent / "templates"
 
+    # LLM timeouts and retry settings
+    LLM_TIMEOUT: int = 120           # seconds per LLM request (connect + read)
+    LLM_MAX_RETRIES: int = 3         # retry transient failures
+    LLM_RETRY_BASE_DELAY: float = 2.0  # exponential backoff base (2s, 4s, 8s)
+    AGENT_TIMEOUT: int = 300         # max seconds for a single agent.run() call
+
     # Dynamic port ranges for generated projects
     APP_PORT_START: int = 9001
     DB_PORT_START: int = 5501

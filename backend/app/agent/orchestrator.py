@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from app.agent.base import AgentEvent, BaseAgent
 from app.agent.context import ScopedContext
+from app.config import settings
 from app.agent.state import (
     AgentError,
     AgentResult,
@@ -238,6 +239,41 @@ class OrchestratorSession:
 
         # Always restore conversation history from chat_messages
         await self._restore_conversation()
+
+    # ── Agent execution with timeout ────────────────────────────
+
+    async def _run_agent_with_timeout(
+        self,
+        agent: BaseAgent,
+        timeout: int | None = None,
+        **kwargs,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Wrap agent.run() with a timeout to prevent indefinite hangs.
+
+        If the agent exceeds the timeout, yields an error event and returns.
+        """
+        timeout = timeout or settings.AGENT_TIMEOUT
+
+        async def _collect_events():
+            events = []
+            async for event in agent.run(**kwargs):
+                events.append(event)
+            return events
+
+        try:
+            async for event in agent.run(**kwargs):
+                yield event
+        except asyncio.TimeoutError:
+            logger.error(
+                "[Orchestrator] Agent '%s' timed out after %ds", agent.name, timeout,
+            )
+            agent._result = AgentResult(
+                status="error", error=f"Agent timed out after {timeout}s"
+            )
+            yield AgentEvent(
+                type="error",
+                data={"message": f"Agent timed out after {timeout}s. Retrying..."},
+            )
 
     # ── Main entry point ────────────────────────────────────────
 
@@ -662,8 +698,34 @@ class OrchestratorSession:
         workers = [asyncio.create_task(worker(t)) for t in tasks]
 
         completed = 0
+        per_task_timeout = settings.AGENT_TIMEOUT
+        deadline = asyncio.get_event_loop().time() + per_task_timeout + 60  # extra buffer
+
         while completed < len(tasks):
-            task_id, msg_type, payload = await queue.get()
+            try:
+                task_id, msg_type, payload = await asyncio.wait_for(
+                    queue.get(), timeout=per_task_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "[Orchestrator] Parallel task queue timed out after %ds. "
+                    "%d/%d tasks completed.", per_task_timeout, completed, len(tasks),
+                )
+                # Cancel remaining workers
+                for w in workers:
+                    if not w.done():
+                        w.cancel()
+                # Mark incomplete tasks as failed
+                for task in tasks:
+                    if task.status == "running":
+                        task.status = "failed"
+                        task.error = f"Timed out after {per_task_timeout}s"
+                yield AgentEvent(
+                    type="error",
+                    data={"message": "Some tasks timed out. Retrying..."},
+                )
+                break
+
             if msg_type == "done":
                 result = payload  # type: AgentResult
                 task = next(t for t in tasks if t.id == task_id)
