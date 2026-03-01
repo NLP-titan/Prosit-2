@@ -65,7 +65,7 @@ export async function getFileContent(projectId: string, path: string): Promise<s
   return res.text();
 }
 
-export async function getChatHistory(projectId: string): Promise<Array<{ role: string; content: string }>> {
+export async function getChatHistory(projectId: string): Promise<Array<{ role: string; content: string; swagger_url?: string; api_url?: string }>> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/chat/history`);
   if (!res.ok) throw new Error("Failed to get chat history");
   return res.json();
