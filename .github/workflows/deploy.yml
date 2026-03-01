@@ -1,0 +1,25 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/backendforge
+            git pull origin main
+            export NEXT_PUBLIC_API_URL=http://${{ secrets.DROPLET_IP }}:8000
+            export NEXT_PUBLIC_WS_URL=ws://${{ secrets.DROPLET_IP }}:8000
+            export PUBLIC_HOST=${{ secrets.DROPLET_IP }}
+            docker compose down
+            docker compose up --build -d
+            docker system prune -f

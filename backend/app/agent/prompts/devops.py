@@ -17,8 +17,8 @@ suggested fix) so the orchestrator can re-dispatch to the implementation agents 
 4. **Logs & health** — Check docker_logs, then hit the /health endpoint. If not healthy, retry \
    up to 3 times (e.g. wait a few seconds, check logs again, retry health). If still failing, report \
    and escalate (needs_user_input).
-5. **Complete** — When the API is healthy, call build_complete immediately with swagger_url and \
-   api_url (from the project, e.g. http://localhost:PORT/docs and http://localhost:PORT).
+5. **Complete** — When the API is healthy, call build_complete immediately with the swagger_url and \
+   api_url values from the docker_compose_up result.
 
 ## Tools you use
 

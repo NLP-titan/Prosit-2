@@ -10,6 +10,7 @@ from app.models.project import Project, ProjectState
 from app.services import git as git_svc
 from app.services import docker as docker_svc
 from app.services import project as project_svc
+from app.config import settings
 from app.generator.scaffold import scaffold_project
 
 logger = logging.getLogger(__name__)
@@ -113,16 +114,17 @@ async def execute_tool(
             ok, output = await docker_svc.compose_up(project_dir)
             if ok:
                 project.state = ProjectState.RUNNING
-                project.swagger_url = f"http://localhost:{project.app_port}/docs"
-                project.api_url = f"http://localhost:{project.app_port}"
+                host = settings.PUBLIC_HOST
+                project.swagger_url = f"http://{host}:{project.app_port}/docs"
+                project.api_url = f"http://{host}:{project.app_port}"
                 await project_svc.update_project(project)
                 return (
                     f"SUCCESS: Containers started and running.\n"
-                    f"API URL: http://localhost:{project.app_port}\n"
-                    f"Swagger UI: http://localhost:{project.app_port}/docs\n\n"
+                    f"API URL: http://{host}:{project.app_port}\n"
+                    f"Swagger UI: http://{host}:{project.app_port}/docs\n\n"
                     f"IMPORTANT: Now call build_complete with swagger_url="
-                    f"\"http://localhost:{project.app_port}/docs\" and api_url="
-                    f"\"http://localhost:{project.app_port}\". "
+                    f"\"http://{host}:{project.app_port}/docs\" and api_url="
+                    f"\"http://{host}:{project.app_port}\". "
                     f"Do NOT test with curl. Call build_complete NOW."
                 )
             else:

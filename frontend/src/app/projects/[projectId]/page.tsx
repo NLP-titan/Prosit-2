@@ -242,7 +242,7 @@ export default function WorkspacePage() {
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                Mesora agent
+                Kruya-Jenjen agent
               </p>
               <h1 className="text-sm font-semibold text-text-primary truncate">
                 {state.project?.name || state.project?.id || projectId}
@@ -563,7 +563,7 @@ export default function WorkspacePage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-text-primary">
-                          Mesora Agent
+                          Kruya-Jenjen Agent
                         </p>
                         <p className="text-[11px] text-text-muted">
                           Describe in plain English the backend you need.

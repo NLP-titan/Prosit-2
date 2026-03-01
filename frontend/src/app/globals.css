@@ -3,7 +3,7 @@
 @source "./projects/*/page.tsx";
 
 :root {
-  /* Light mode defaults - Mesora-inspired */
+  /* Light mode defaults - Kruya-Jenjen-inspired */
   --bg-primary: #ffffff;
   --bg-secondary: #f4f4f5;    /* soft gray, used for shells */
   --bg-tertiary: #e4e4e7;
@@ -12,7 +12,7 @@
   --text-secondary: #52525b;
   --text-muted: #a1a1aa;
   --border-color: #e4e4e7;
-  --accent: #0e7a3d;          /* Mesora green */
+  --accent: #0e7a3d;          /* Kruya-Jenjen green */
   --chat-user-bg: #111111;
   --chat-user-text: #ffffff;
   --chat-ai-bg: #ffffff;

@@ -17,7 +17,7 @@ export default function Home() {
           <div className="page-shell">
             <div className="bg-bg-secondary rounded-[40px] px-6 py-16 md:py-28 text-center flex flex-col items-center relative overflow-hidden">
               <Badge className="mb-8" variant="soft">
-                Mesora AI Research
+                Kruya-Jenjen AI Research
               </Badge>
               <h1 className="text-4xl md:text-6xl lg:text-7xl font-semibold tracking-tight text-text-primary mb-6 max-w-4xl leading-[1.1]">
                 Build robust backend APIs{" "}
@@ -26,7 +26,7 @@ export default function Home() {
               </h1>
               <p className="text-lg md:text-xl text-text-secondary mb-10 max-w-2xl font-light">
                 Describe what your application should do in plain English.
-                Mesora&apos;s coding agents design, scaffold, and deploy a
+                Kruya-Jenjen&apos;s coding agents design, scaffold, and deploy a
                 production-grade FastAPI + PostgreSQL backend for you.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
@@ -96,7 +96,7 @@ export default function Home() {
                 built in from day one.
               </h2>
               <p className="text-text-secondary max-w-2xl mx-auto text-lg">
-                Design from the frontend and let Mesora generate a clean,
+                Design from the frontend and let Kruya-Jenjen generate a clean,
                 well-defined API interface and backend infrastructure for your
                 app.
               </p>
@@ -113,7 +113,7 @@ export default function Home() {
                 </h3>
                 <p className="text-text-secondary leading-relaxed">
                   Build your UI in React, Lovable, or any tool you love.
-                  Connect to your Mesora backend via standard API protocols.
+                  Connect to your Kruya-Jenjen backend via standard API protocols.
                 </p>
               </div>
 
@@ -169,7 +169,7 @@ export default function Home() {
                     Describe your data model
                   </h3>
                   <p className="text-text-secondary mb-8 max-w-md">
-                    Tell Mesora what resources your application needs. The agent
+                    Tell Kruya-Jenjen what resources your application needs. The agent
                     reasons about your description and designs an optimal schema
                     and API surface.
                   </p>
@@ -225,7 +225,7 @@ export default function Home() {
             <div className="grid md:grid-cols-2 gap-12 items-start">
               <div className="space-y-6 text-base md:text-lg text-text-secondary leading-relaxed font-light">
                 <p>
-                  <span className="text-text-primary font-medium">Mesora</span> is
+                  <span className="text-text-primary font-medium">Kruya-Jenjen</span> is
                   an AI research lab based in Ghana. We are obsessed with
                   coding agents and their potential to transform how software is
                   built.
@@ -237,7 +237,7 @@ export default function Home() {
                   infrastructure experts.
                 </p>
                 <p>
-                  Mesora lets you explain your app like you would to a teammate,
+                  Kruya-Jenjen lets you explain your app like you would to a teammate,
                   then turns that explanation into real, running infrastructure.
                 </p>
               </div>

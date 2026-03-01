@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     LLM_MAX_RETRIES: int = 3         # retry transient failures
     LLM_RETRY_BASE_DELAY: float = 2.0  # exponential backoff base (2s, 4s, 8s)
     AGENT_TIMEOUT: int = 300         # max seconds for a single agent.run() call
+    # Public hostname/IP for user-facing URLs (Swagger, API links)
+    PUBLIC_HOST: str = "localhost"
 
     # Dynamic port ranges for generated projects
     APP_PORT_START: int = 9001

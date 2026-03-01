@@ -26,7 +26,7 @@ export default function SiteNav() {
               <Terminal className="w-4 h-4 text-accent" />
             </div>
             <span className="font-bold text-xl tracking-tight">
-              Mesora.
+              Kruya-Jenjen.
             </span>
           </Link>
 
