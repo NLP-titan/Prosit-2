@@ -84,7 +84,7 @@ async def _check_health(api_url: str) -> bool:
     import asyncio
     for attempt in range(HEALTH_RETRIES):
         try:
-            async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT, follow_redirects=True) as client:
                 resp = await client.get(f"{api_url}/health")
                 if resp.status_code == 200:
                     return True
@@ -93,7 +93,7 @@ async def _check_health(api_url: str) -> bool:
 
         # Try /docs as fallback
         try:
-            async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT, follow_redirects=True) as client:
                 resp = await client.get(f"{api_url}/docs")
                 if resp.status_code == 200:
                     return True
@@ -109,7 +109,7 @@ async def _check_health(api_url: str) -> bool:
 async def _fetch_openapi(api_url: str) -> dict | None:
     """Fetch the OpenAPI spec from the generated API."""
     try:
-        async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(f"{api_url}/openapi.json")
             if resp.status_code == 200:
                 return resp.json()
@@ -268,7 +268,7 @@ async def validate(
             ))
 
     # ── 3. Endpoint probing ────────────────────────────────────
-    async with httpx.AsyncClient(timeout=CRUD_REQUEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=CRUD_REQUEST_TIMEOUT, follow_redirects=True) as client:
         for ep in scenario.endpoints:
             er = await _probe_endpoint(client, api_url, ep)
             vr.endpoint_results.append(er)
