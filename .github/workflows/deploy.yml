@@ -17,6 +17,8 @@ jobs:
           script: |
             cd /opt/backendforge
             git pull origin main
+            export NEXT_PUBLIC_API_URL=http://${{ secrets.DROPLET_IP }}:8000
+            export NEXT_PUBLIC_WS_URL=ws://${{ secrets.DROPLET_IP }}:8000
             docker compose down
             docker compose up --build -d
             docker system prune -f
