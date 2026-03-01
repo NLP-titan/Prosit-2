@@ -1,38 +1,38 @@
 {
-  "timestamp": "2026-03-01T16:24:10Z",
+  "timestamp": "2026-03-01T16:37:15Z",
   "aggregate": {
     "total_scenarios": 4,
     "completed_count": 4,
     "completion_rate": 1.0,
-    "avg_build_time": 265.3488013744354,
-    "avg_tool_calls": 58.25,
-    "avg_endpoint_coverage": 0.53,
-    "avg_schema_match": 0.9666666666666667,
-    "avg_final_score": 0.7820999520946117,
+    "avg_build_time": 145.34380000829697,
+    "avg_tool_calls": 47.0,
+    "avg_endpoint_coverage": 0.6,
+    "avg_schema_match": 1.0,
+    "avg_final_score": 0.8418351659959271,
     "by_complexity": {
       "trivial": {
         "count": 1,
         "completed": 1,
-        "avg_score": 0.9168741894690764,
-        "avg_build_time": 162.432461977005
+        "avg_score": 0.8814285714285715,
+        "avg_build_time": 119.46753001213074
       },
       "simple": {
         "count": 1,
         "completed": 1,
-        "avg_score": 0.8381371627818971,
-        "avg_build_time": 197.51304721832275
+        "avg_score": 0.8575872314331078,
+        "avg_build_time": 138.4384319782257
       },
       "medium": {
         "count": 1,
         "completed": 1,
-        "avg_score": 0.7832439868365016,
-        "avg_build_time": 310.14314889907837
+        "avg_score": 0.8351799081975506,
+        "avg_build_time": 156.8507263660431
       },
       "complex": {
         "count": 1,
         "completed": 1,
-        "avg_score": 0.5901444692909719,
-        "avg_build_time": 391.30654740333557
+        "avg_score": 0.7931449529244787,
+        "avg_build_time": 166.61851167678833
       }
     }
   },
@@ -42,17 +42,17 @@
       "scenario_name": "Todo API",
       "complexity": "trivial",
       "completed": true,
-      "build_time": 162.432461977005,
-      "tool_calls": 27,
-      "agent_messages": 4,
+      "build_time": 119.46753001213074,
+      "tool_calls": 23,
+      "agent_messages": 18,
       "ask_user_count": 1,
       "error": null,
-      "endpoint_coverage": 0.8,
+      "endpoint_coverage": 0.6,
       "schema_match_score": 1.0,
       "completion_score": 1.0,
-      "build_time_score": 0.9115990375479063,
-      "llm_rounds_score": 0.7571428571428571,
-      "final_score": 0.9168741894690764,
+      "build_time_score": 1.0,
+      "llm_rounds_score": 0.8142857142857143,
+      "final_score": 0.8814285714285715,
       "schema_details": [
         {
           "entity": "Todo",
@@ -66,15 +66,15 @@
         {
           "method": "GET",
           "path": "/todos",
-          "status": 200,
-          "success": true,
+          "status": 307,
+          "success": false,
           "error": null
         },
         {
           "method": "POST",
           "path": "/todos",
-          "status": 422,
-          "success": true,
+          "status": 307,
+          "success": false,
           "error": null
         },
         {
@@ -87,8 +87,8 @@
         {
           "method": "PUT",
           "path": "/todos/{id}",
-          "status": 405,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
@@ -105,17 +105,17 @@
       "scenario_name": "Blog API",
       "complexity": "simple",
       "completed": true,
-      "build_time": 197.51304721832275,
-      "tool_calls": 42,
-      "agent_messages": 17,
+      "build_time": 138.4384319782257,
+      "tool_calls": 37,
+      "agent_messages": 29,
       "ask_user_count": 1,
       "error": null,
       "endpoint_coverage": 0.6,
       "schema_match_score": 1.0,
       "completion_score": 1.0,
-      "build_time_score": 0.8385144849618276,
-      "llm_rounds_score": 0.5428571428571428,
-      "final_score": 0.8381371627818971,
+      "build_time_score": 0.9615866000453631,
+      "llm_rounds_score": 0.6142857142857143,
+      "final_score": 0.8575872314331078,
       "schema_details": [
         {
           "entity": "Author",
@@ -210,17 +210,17 @@
       "scenario_name": "E-commerce API",
       "complexity": "medium",
       "completed": true,
-      "build_time": 310.14314889907837,
-      "tool_calls": 64,
-      "agent_messages": 21,
+      "build_time": 156.8507263660431,
+      "tool_calls": 50,
+      "agent_messages": 38,
       "ask_user_count": 1,
       "error": null,
       "endpoint_coverage": 0.6,
       "schema_match_score": 1.0,
       "completion_score": 1.0,
-      "build_time_score": 0.6038684397935867,
-      "llm_rounds_score": 0.22857142857142856,
-      "final_score": 0.7832439868365016,
+      "build_time_score": 0.9232276534040769,
+      "llm_rounds_score": 0.42857142857142855,
+      "final_score": 0.8351799081975506,
       "schema_details": [
         {
           "entity": "Category",
@@ -248,14 +248,14 @@
         {
           "method": "GET",
           "path": "/categories",
-          "status": 404,
+          "status": 307,
           "success": false,
           "error": null
         },
         {
           "method": "POST",
           "path": "/categories",
-          "status": 404,
+          "status": 307,
           "success": false,
           "error": null
         },
@@ -357,17 +357,17 @@
       "scenario_name": "School Management API",
       "complexity": "complex",
       "completed": true,
-      "build_time": 391.30654740333557,
-      "tool_calls": 100,
-      "agent_messages": 24,
+      "build_time": 166.61851167678833,
+      "tool_calls": 78,
+      "agent_messages": 54,
       "ask_user_count": 1,
       "error": null,
-      "endpoint_coverage": 0.12,
-      "schema_match_score": 0.8666666666666668,
+      "endpoint_coverage": 0.6,
+      "schema_match_score": 1.0,
       "completion_score": 1.0,
-      "build_time_score": 0.4347780262430509,
-      "llm_rounds_score": 0.0,
-      "final_score": 0.5901444692909719,
+      "build_time_score": 0.9028781006733576,
+      "llm_rounds_score": 0.02857142857142857,
+      "final_score": 0.7931449529244787,
       "schema_details": [
         {
           "entity": "Department",
@@ -386,12 +386,9 @@
         {
           "entity": "Course",
           "expected": 3,
-          "found": 1,
-          "missing": [
-            "code",
-            "credits"
-          ],
-          "score": 0.3333333333333333
+          "found": 3,
+          "missing": [],
+          "score": 1.0
         },
         {
           "entity": "Student",
@@ -426,23 +423,23 @@
         {
           "method": "GET",
           "path": "/departments/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "PUT",
           "path": "/departments/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "DELETE",
           "path": "/departments/{id}",
-          "status": null,
-          "success": false,
-          "error": "Server disconnected without sending a response."
+          "status": 404,
+          "success": true,
+          "error": null
         },
         {
           "method": "GET",
@@ -461,35 +458,35 @@
         {
           "method": "GET",
           "path": "/teachers/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "PUT",
           "path": "/teachers/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "DELETE",
           "path": "/teachers/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "GET",
           "path": "/courses",
-          "status": 404,
+          "status": 307,
           "success": false,
           "error": null
         },
         {
           "method": "POST",
           "path": "/courses",
-          "status": 404,
+          "status": 307,
           "success": false,
           "error": null
         },
@@ -531,22 +528,22 @@
         {
           "method": "GET",
           "path": "/students/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "PUT",
           "path": "/students/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "DELETE",
           "path": "/students/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
@@ -566,22 +563,22 @@
         {
           "method": "GET",
           "path": "/enrollments/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "PUT",
           "path": "/enrollments/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         },
         {
           "method": "DELETE",
           "path": "/enrollments/{id}",
-          "status": 500,
-          "success": false,
+          "status": 404,
+          "success": true,
           "error": null
         }
       ]
