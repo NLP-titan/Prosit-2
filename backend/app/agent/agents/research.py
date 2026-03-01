@@ -34,7 +34,7 @@ class ClarificationAgent(BaseAgent):
     model = settings.OPENROUTER_MODEL  # Minimax via OpenRouter
     system_prompt = ""  # Set in run() from prompts.research
     tool_names = ["ask_user", "check_spec_completeness", "finalize_spec"]
-    max_tool_rounds = 25
+    max_tool_rounds = 30
 
     async def run(
         self,

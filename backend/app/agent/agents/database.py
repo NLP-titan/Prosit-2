@@ -24,7 +24,7 @@ class DatabaseAgent(BaseAgent):
         "run_command",
         "git_commit",
     ]
-    max_tool_rounds = 20
+    max_tool_rounds = 30
 
     async def run(
         self,

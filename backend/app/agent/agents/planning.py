@@ -21,7 +21,7 @@ class PlanningAgent(BaseAgent):
     name = "planning"
     system_prompt = PLANNING_SYSTEM_PROMPT
     tool_names = ["read_file", "list_directory", "submit_plan"]
-    max_tool_rounds = 10
+    max_tool_rounds = 20
 
     async def run(
         self,

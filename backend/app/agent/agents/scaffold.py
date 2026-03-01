@@ -35,7 +35,7 @@ class ScaffoldAgent(BaseAgent):
     name = "scaffold"
     system_prompt = SCAFFOLD_SYSTEM_PROMPT
     tool_names = ["scaffold_project", "git_commit"]
-    max_tool_rounds = 5
+    max_tool_rounds = 10
 
     async def run(
         self,

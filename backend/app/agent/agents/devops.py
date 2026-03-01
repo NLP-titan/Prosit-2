@@ -44,7 +44,7 @@ class DevOpsAgent(BaseAgent):
         "read_file",
         "build_complete",
     ]
-    max_tool_rounds = 20
+    max_tool_rounds = 30
 
     _INITIAL_WAIT = 5       # seconds to wait after compose up before first health check
     _RETRY_WAIT = 5         # seconds between health check retries

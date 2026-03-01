@@ -774,62 +774,160 @@ class OrchestratorSession:
 
     # ── Validation phase ────────────────────────────────────────
 
+    _MAX_VALIDATION_RETRIES = 3
+
     async def _run_validation(self) -> AsyncGenerator[AgentEvent, None]:
         if "devops" not in self._agents:
             async for event in self._fallback_to_prototype(""):
                 yield event
             return
 
-        yield await self._set_project_state(ProjectState.BUILDING)
+        for validation_attempt in range(self._MAX_VALIDATION_RETRIES):
+            yield await self._set_project_state(ProjectState.BUILDING)
 
-        agent = self._agents["devops"]
-        self._active_agent = agent
+            agent = self._agents["devops"]
+            self._active_agent = agent
 
-        async for event in agent.run(
-            state=self.state,
-            project=self.project,
-        ):
-            yield event
-            if event.type == "build_complete":
+            async for event in agent.run(
+                state=self.state,
+                project=self.project,
+            ):
+                yield event
+                if event.type == "build_complete":
+                    self.state.current_phase = Phase.COMPLETE
+                    yield AgentEvent(
+                        type="phase_transition",
+                        data={"from": "validation", "to": "complete"},
+                    )
+                    await self.save_state()
+                    self._active_agent = None
+                    return
+
+            result = await agent.get_result()
+            self._active_agent = None
+
+            if result.status == "success":
                 self.state.current_phase = Phase.COMPLETE
                 yield AgentEvent(
                     type="phase_transition",
                     data={"from": "validation", "to": "complete"},
                 )
                 await self.save_state()
-                self._active_agent = None
                 return
 
-        result = await agent.get_result()
-        self._active_agent = None
+            # ── Deployment failed — try to auto-fix ────────────────
+            error_msg = result.error or "Unknown error"
+            suggested_agent = result.state_updates.get("suggested_agent")
+            suggested_fix = result.state_updates.get("suggested_fix", "")
+            error_file = result.state_updates.get("error_file_path")
+            build_error = result.state_updates.get("build_error", "")
 
-        if result.status == "success":
-            self.state.current_phase = Phase.COMPLETE
-            yield AgentEvent(
-                type="phase_transition",
-                data={"from": "validation", "to": "complete"},
+            logger.warning(
+                "[Orchestrator] Validation attempt %d/%d failed: %s (suggested_agent=%s)",
+                validation_attempt + 1, self._MAX_VALIDATION_RETRIES,
+                error_msg[:200], suggested_agent,
             )
-            await self.save_state()
-        elif result.status == "error":
-            self.state.errors.append(
-                AgentError(
-                    agent="devops",
-                    task_id=None,
-                    message=result.error or "Validation failed",
+
+            # If we have a suggested agent and it's available, dispatch a fix task
+            if suggested_agent and suggested_agent in self._agents and validation_attempt < self._MAX_VALIDATION_RETRIES - 1:
+                fix_instruction = self._build_fix_instruction(
+                    error_msg, suggested_fix, error_file, build_error,
                 )
-            )
-            yield AgentEvent(
-                type="error",
-                data={
-                    "message": (
-                        "Deployment didn't complete successfully. "
-                        "This can happen if the app has startup errors or the health check timed out. "
-                        "You can click **Deploy** to try again."
+                logger.info(
+                    "[Orchestrator] Dispatching fix to '%s' agent: %s",
+                    suggested_agent, fix_instruction[:150],
+                )
+
+                status_msg = f"Deployment failed — fixing the issue and retrying..."
+                yield AgentEvent(type="agent_message_start")
+                yield AgentEvent(type="agent_message_delta", data={"token": status_msg})
+                yield AgentEvent(type="agent_message_end")
+                await self._track_assistant_message(status_msg)
+
+                fix_task = Task(
+                    id=f"autofix_{validation_attempt}",
+                    type="auto_fix",
+                    description=fix_instruction,
+                    agent=suggested_agent,
+                )
+
+                fix_agent = self._agents[suggested_agent]
+                self._active_agent = fix_agent
+
+                async for event in fix_agent.run(
+                    state=self.state,
+                    project=self.project,
+                    task=fix_task,
+                    user_message=fix_instruction,
+                    shared_context=self._shared_context,
+                ):
+                    yield event
+
+                fix_result = await fix_agent.get_result()
+                self._active_agent = None
+
+                if fix_result.status == "error":
+                    logger.warning(
+                        "[Orchestrator] Fix agent failed: %s", fix_result.error,
                     )
-                },
+                else:
+                    logger.info("[Orchestrator] Fix applied, retrying deployment...")
+
+                # Loop continues → next validation attempt
+                continue
+
+            # No agent to fix it, or last attempt — give up
+            break
+
+        # All retries exhausted
+        self.state.errors.append(
+            AgentError(
+                agent="devops",
+                task_id=None,
+                message=result.error or "Validation failed",
             )
-            await self.save_state()
-            yield AgentEvent(type="waiting_for_user")
+        )
+        yield AgentEvent(
+            type="error",
+            data={
+                "message": (
+                    "Deployment didn't complete successfully. "
+                    "This can happen if the app has startup errors or the health check timed out. "
+                    "You can click **Deploy** to try again."
+                )
+            },
+        )
+        await self.save_state()
+        yield AgentEvent(type="waiting_for_user")
+
+    def _build_fix_instruction(
+        self,
+        error_msg: str,
+        suggested_fix: str,
+        error_file: str | None,
+        build_error: str,
+    ) -> str:
+        """Build a clear instruction for the fix agent based on the deployment error."""
+        parts = ["The deployment failed with the following error. Fix it.\n"]
+
+        parts.append(f"**Error:** {error_msg}\n")
+
+        if suggested_fix:
+            parts.append(f"**Suggested fix:** {suggested_fix}\n")
+
+        if error_file:
+            parts.append(f"**File:** {error_file}\n")
+
+        if build_error:
+            # Include the last 1500 chars of build output for context
+            parts.append(f"**Build output (last lines):**\n```\n{build_error[-1500:]}\n```\n")
+
+        parts.append(
+            "Read the relevant file(s), fix the issue, and commit the changes. "
+            "Do NOT re-read files that are already in the shared context unless needed."
+        )
+
+        return "\n".join(parts)
 
     # ── Interruption handling ───────────────────────────────────
 
