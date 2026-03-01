@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     PROJECTS_DIR: Path = Path(__file__).resolve().parent.parent.parent / "projects"
     TEMPLATES_DIR: Path = Path(__file__).resolve().parent.parent.parent / "templates"
 
+    # Public hostname/IP for user-facing URLs (Swagger, API links)
+    PUBLIC_HOST: str = "localhost"
+
     # Dynamic port ranges for generated projects
     APP_PORT_START: int = 9001
     DB_PORT_START: int = 5501

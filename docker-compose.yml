@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
       - PROJECTS_DIR=/projects
       - TEMPLATES_DIR=/templates
     volumes:

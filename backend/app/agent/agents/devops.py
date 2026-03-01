@@ -11,6 +11,7 @@ from app.agent.prompts.devops import DEVOPS_SYSTEM_PROMPT
 from app.agent.state import AgentResult, SharedState, Task
 from app.agent.validation import validate_project
 from app.models.project import Project
+from app.config import settings
 from app.services import docker as docker_svc
 
 logger = logging.getLogger(__name__)
@@ -202,8 +203,9 @@ class DevOpsAgent(BaseAgent):
                 return
 
         # ── 5. build_complete ───────────────────────────────────
-        swagger_url = project.swagger_url or f"http://localhost:{project.app_port}/docs"
-        api_url = project.api_url or f"http://localhost:{project.app_port}"
+        host = settings.PUBLIC_HOST
+        swagger_url = project.swagger_url or f"http://{host}:{project.app_port}/docs"
+        api_url = project.api_url or f"http://{host}:{project.app_port}"
         yield AgentEvent(type="tool_call_start", data={
             "tool": "build_complete",
             "arguments": {"swagger_url": swagger_url, "api_url": api_url},
