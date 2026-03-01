@@ -1,33 +1,17 @@
 """Track 5: ValidationRunner — pure Python utility for pre-Docker validation.
 
-NOT an LLM agent. Runs syntax_check and optional import_check on .py files
-before Docker build to catch obvious errors cheaply.
+NOT an LLM agent. Runs syntax and import checks on .py files before Docker
+build to catch obvious errors cheaply.
+
+All checks are in-process (no subprocesses) for speed — a single ast.parse()
+per file handles both syntax validation and import extraction.
 """
 
 from __future__ import annotations
 
 import ast
 import re
-import subprocess
-import sys
 from pathlib import Path
-
-
-def syntax_check(file_path: Path) -> tuple[bool, str | None]:
-    """Run python -m py_compile on file_path. Return (pass, None) or (fail, error_message)."""
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "py_compile", str(file_path)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=file_path.parent,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        return False, str(e)
-    if result.returncode == 0:
-        return True, None
-    return False, (result.stderr or result.stdout or "Unknown syntax error").strip()
 
 
 def _normalize_package_name(name: str) -> str:
@@ -44,36 +28,65 @@ def _parse_requirements(requirements_path: Path) -> set[str]:
         line = line.strip().split("#")[0].strip()
         if not line or line.startswith("-"):
             continue
-        # Handle package==version, package[extra], package
         match = re.match(r"^([a-zA-Z0-9_-]+)", line)
         if match:
             names.add(_normalize_package_name(match.group(1)))
     return names
 
 
-def _get_imports_from_file(file_path: Path) -> list[str]:
-    """Parse Python file and return list of top-level module names imported."""
+def _check_file(
+    file_path: Path,
+    allowed_packages: set[str] | None,
+) -> tuple[str | None, list[str]]:
+    """Parse a single .py file. Returns (syntax_error, [import_errors]).
+
+    A single ast.parse() call validates syntax and extracts imports.
+    """
     try:
-        text = file_path.read_text()
-    except Exception:
-        return []
+        source = file_path.read_text()
+    except Exception as e:
+        return f"Cannot read file: {e}", []
+
+    # ast.parse catches the same errors as py_compile, without subprocess overhead
     try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return []
-    modules = []
+        tree = ast.parse(source, filename=str(file_path))
+    except SyntaxError as e:
+        msg = f"line {e.lineno}: {e.msg}" if e.lineno else str(e.msg)
+        return msg, []
+
+    # If no requirements to check against, skip import check
+    if not allowed_packages:
+        return None, []
+
+    # Extract top-level imports from the parsed AST
+    import_errors: list[str] = []
+    seen: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                top = alias.name.split(".")[0]
+                top = _normalize_package_name(alias.name.split(".")[0])
                 if not top.startswith("_"):
-                    modules.append(_normalize_package_name(top))
+                    seen.add(top)
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                top = node.module.split(".")[0]
+                top = _normalize_package_name(node.module.split(".")[0])
                 if not top.startswith("_"):
-                    modules.append(_normalize_package_name(top))
-    return modules
+                    seen.add(top)
+
+    for m in sorted(seen):
+        if m in _STDLIB:
+            continue
+        if m in allowed_packages:
+            continue
+        # Allow local "app" package
+        if m == "app":
+            continue
+        # Check prefix matches (e.g. pydantic matches pydantic_settings)
+        if any(m.startswith(a) or a.startswith(m) for a in allowed_packages):
+            continue
+        import_errors.append(m)
+
+    return None, import_errors
 
 
 # Standard library modules (common ones; we skip these for import_check)
@@ -111,34 +124,8 @@ _STDLIB = frozenset(
 )
 
 
-def import_check(file_path: Path, requirements_path: Path) -> tuple[bool, str | None]:
-    """Verify file's imports resolve against requirements.txt. Return (pass, None) or (fail, message)."""
-    allowed = _parse_requirements(requirements_path)
-    if not allowed:
-        return True, None  # No requirements.txt -> skip import check
-    modules = _get_imports_from_file(file_path)
-    if not modules:
-        return True, None
-    unresolved = []
-    for m in set(modules):
-        if m in _STDLIB:
-            continue
-        if m in allowed:
-            continue
-        # Allow submodules of allowed (e.g. fastapi -> fastapi.openapi)
-        if any(_normalize_package_name(p) in allowed for p in (m.split("_")[0], m)):
-            continue
-        # Check if any requirement starts with this (e.g. pydantic matches pydantic)
-        if any(m.startswith(a) or a.startswith(m) for a in allowed):
-            continue
-        unresolved.append(m)
-    if not unresolved:
-        return True, None
-    return False, f"Unresolved imports: {', '.join(sorted(unresolved))}"
-
-
 def validate_project(project_dir: Path) -> dict:
-    """Run syntax_check on all .py files; optionally import_check if requirements.txt exists.
+    """Validate all .py files: syntax + import check in a single pass per file.
 
     Returns: {"passed": bool, "errors": [{"file": str, "message": str, "type": "syntax"|"import"}]}
     """
@@ -146,35 +133,31 @@ def validate_project(project_dir: Path) -> dict:
     errors: list[dict] = []
     exclude_dirs = {"__pycache__", ".venv", "venv", ".git", "node_modules"}
 
-    def collect_py(path: Path) -> list[Path]:
-        out = []
-        try:
-            for item in path.iterdir():
-                if item.name in exclude_dirs:
-                    continue
-                if item.is_dir():
-                    out.extend(collect_py(item))
-                elif item.suffix == ".py":
-                    out.append(item)
-        except OSError:
-            pass
-        return out
+    # Collect all .py files
+    py_files: list[Path] = []
+    for item in project_dir.rglob("*.py"):
+        if not any(part in exclude_dirs for part in item.parts):
+            py_files.append(item)
 
-    py_files = collect_py(project_dir)
+    # Parse requirements once (not per-file)
     requirements_path = project_dir / "requirements.txt"
+    allowed = _parse_requirements(requirements_path) if requirements_path.exists() else None
 
     for fp in py_files:
         try:
             rel = fp.relative_to(project_dir)
         except ValueError:
             rel = Path(fp.name)
-        ok, err = syntax_check(fp)
-        if not ok:
-            errors.append({"file": str(rel), "message": err or "Syntax error", "type": "syntax"})
-            continue
-        if requirements_path.exists():
-            ok, err = import_check(fp, requirements_path)
-            if not ok:
-                errors.append({"file": str(rel), "message": err or "Import error", "type": "import"})
+
+        syntax_err, import_errs = _check_file(fp, allowed)
+
+        if syntax_err:
+            errors.append({"file": str(rel), "message": syntax_err, "type": "syntax"})
+        elif import_errs:
+            errors.append({
+                "file": str(rel),
+                "message": f"Unresolved imports: {', '.join(import_errs)}",
+                "type": "import",
+            })
 
     return {"passed": len(errors) == 0, "errors": errors}
