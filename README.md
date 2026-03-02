@@ -1,4 +1,4 @@
-# BackendForge
+# Kruya-Jenjen
 
 Build production-ready backend APIs through natural language. Describe what you want, and a multi-agent AI system generates a fully dockerized FastAPI + PostgreSQL project — handling requirements gathering, architecture planning, code generation, database setup, deployment, and documentation automatically.
 
